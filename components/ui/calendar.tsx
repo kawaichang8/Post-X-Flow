@@ -114,9 +114,14 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: ({ ...props }) => <ChevronLeft className="h-4 w-4" />,
-        IconRight: ({ ...props }) => <ChevronRight className="h-4 w-4" />,
-        DayButton: ({ day, modifiers, ...buttonProps }) => {
+        Chevron: ({ orientation, ...props }: { orientation?: "left" | "right" } & React.ComponentProps<"svg">) => {
+          return orientation === "left" ? (
+            <ChevronLeft className="h-4 w-4" {...props} />
+          ) : (
+            <ChevronRight className="h-4 w-4" {...props} />
+          )
+        },
+        Day: ({ day, modifiers, ...buttonProps }: any) => {
           const dayDate = day.date
           if (!dayDate || isNaN(dayDate.getTime())) {
             return <button {...buttonProps} type="button" className="h-10 w-10" />
@@ -153,7 +158,7 @@ function Calendar({
             </button>
           )
         },
-      }}
+      } as any}
       {...props}
     />
   )
