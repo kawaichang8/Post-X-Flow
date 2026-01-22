@@ -13,6 +13,8 @@ export type CalendarProps = Omit<DayPickerSingleProps, "selected" | "onSelect" |
   selectedDate?: Date
   selected?: Date
   onSelect?: (date: Date | undefined) => void
+  className?: string
+  classNames?: DayPickerSingleProps["classNames"]
 }
 
 function Calendar({
