@@ -1661,3 +1661,52 @@ export async function searchLocations(
     return []
   }
 }
+
+/**
+ * ツイート用アイキャッチ画像を生成（Server Action）
+ */
+export async function generateTweetImage(
+  tweetText: string,
+  trend?: string,
+  purpose?: string
+): Promise<{ success: boolean; image?: GeneratedImage; error?: string }> {
+  try {
+    const image = await generateEyeCatchImage(tweetText, trend, purpose)
+    if (image) {
+      return { success: true, image }
+    } else {
+      return { success: false, error: "画像の生成に失敗しました" }
+    }
+  } catch (error) {
+    console.error("Error generating tweet image:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "画像の生成に失敗しました"
+    }
+  }
+}
+
+/**
+ * ツイート用画像バリエーションを生成（Server Action）
+ */
+export async function generateTweetImageVariations(
+  tweetText: string,
+  trend?: string,
+  purpose?: string,
+  count: number = 3
+): Promise<{ success: boolean; images?: GeneratedImage[]; error?: string }> {
+  try {
+    const images = await generateImageVariations(tweetText, trend, purpose, count)
+    if (images.length > 0) {
+      return { success: true, images }
+    } else {
+      return { success: false, error: "画像の生成に失敗しました" }
+    }
+  } catch (error) {
+    console.error("Error generating tweet image variations:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "画像の生成に失敗しました"
+    }
+  }
+}
