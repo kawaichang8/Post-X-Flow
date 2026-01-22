@@ -40,6 +40,10 @@ export async function generateEyeCatchImage(
       n: 1, // DALL-E 3 only supports n=1
     })
 
+    if (!response.data || response.data.length === 0) {
+      throw new Error('No image data returned from DALL-E')
+    }
+
     const imageUrl = response.data[0]?.url
     const revisedPrompt = response.data[0]?.revised_prompt
 
