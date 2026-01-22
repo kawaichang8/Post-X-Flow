@@ -37,6 +37,7 @@ export type CalendarProps = Omit<DayPickerSingleProps, "selected" | "onSelect" |
     day_range_middle: string
     day_hidden: string
   }>
+  showOutsideDays?: boolean
 }
 
 function Calendar({
