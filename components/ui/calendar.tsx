@@ -6,15 +6,13 @@ import { DayPicker, type DayPickerSingleProps } from "react-day-picker"
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 
-export type CalendarProps = Omit<DayPickerSingleProps, "selected" | "onSelect" | "mode" | "className" | "classNames"> & {
+export type CalendarProps = Omit<DayPickerSingleProps, "selected" | "onSelect" | "mode"> & {
   mode?: "single"
   scheduledDates?: Date[]
   onDateClick?: (date: Date) => void
   selectedDate?: Date
   selected?: Date
   onSelect?: (date: Date | undefined) => void
-  className?: string
-  classNames?: Record<string, string>
 }
 
 function Calendar({
