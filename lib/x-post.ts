@@ -64,6 +64,10 @@ export async function getTwitterAccessToken(
       redirectUri,
     })
 
+    if (!accessToken || !refreshToken) {
+      throw new Error('Failed to obtain access token or refresh token from Twitter')
+    }
+
     console.log('[Twitter OAuth] Access token received successfully')
     return { accessToken, refreshToken }
   } catch (error) {
@@ -82,6 +86,10 @@ export async function refreshTwitterAccessToken(
     console.log('[Twitter OAuth] Refreshing access token...')
     
     const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await client.refreshOAuth2Token(refreshToken)
+
+    if (!newAccessToken) {
+      throw new Error('Failed to obtain new access token from Twitter')
+    }
 
     console.log('[Twitter OAuth] Access token refreshed successfully')
     return { 
