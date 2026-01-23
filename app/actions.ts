@@ -5,6 +5,28 @@ import { createServerClient } from "@/lib/supabase"
 import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place } from "@/lib/x-post"
 import { generateEyeCatchImage, generateImageVariations, downloadImageAsBuffer, GeneratedImage } from "@/lib/image-generator"
 
+interface PostHistoryItem {
+  id: string
+  text: string
+  hashtags: string[]
+  naturalness_score: number
+  trend: string | null
+  purpose: string | null
+  status: 'draft' | 'posted' | 'scheduled' | 'deleted'
+  tweet_id: string | null
+  scheduled_for: string | null
+  engagement_score: number | null
+  impression_count: number | null
+  reach_count: number | null
+  engagement_rate: number | null
+  like_count: number
+  retweet_count: number
+  reply_count: number
+  quote_count: number
+  created_at: string
+  twitter_account_id: string | null
+}
+
 export async function generatePostDrafts(
   trend: string,
   purpose: string
@@ -494,8 +516,8 @@ export async function getUserPurposes(userId: string): Promise<string[]> {
 
     // Get unique purposes, most recent first
     const uniquePurposes = Array.from(
-      new Set((data || []).map((item) => item.purpose).filter(Boolean))
-    )
+      new Set((data || []).map((item: { purpose: string | null }) => item.purpose).filter(Boolean))
+    ) as string[]
 
     return uniquePurposes
   } catch (error) {
@@ -702,45 +724,45 @@ export async function getPostPerformanceStats(userId: string): Promise<PostPerfo
 
     if (error) throw error
 
-    const posts = allPosts || []
+    const posts = (allPosts || []) as PostHistoryItem[]
     
     // Calculate statistics
     const totalPosts = posts.length
-    const postedCount = posts.filter(p => p.status === 'posted').length
-    const draftCount = posts.filter(p => p.status === 'draft').length
-    const scheduledCount = posts.filter(p => p.status === 'scheduled').length
+    const postedCount = posts.filter((p: PostHistoryItem) => p.status === 'posted').length
+    const draftCount = posts.filter((p: PostHistoryItem) => p.status === 'draft').length
+    const scheduledCount = posts.filter((p: PostHistoryItem) => p.status === 'scheduled').length
     
     // Calculate average engagement (only for posted tweets)
-    const postedPosts = posts.filter(p => p.status === 'posted' && p.engagement_score !== null)
+    const postedPosts = posts.filter((p: PostHistoryItem) => p.status === 'posted' && p.engagement_score !== null)
     const averageEngagement = postedPosts.length > 0
-      ? Math.round(postedPosts.reduce((sum, p) => sum + (p.engagement_score || 0), 0) / postedPosts.length)
+      ? Math.round(postedPosts.reduce((sum: number, p: PostHistoryItem) => sum + (p.engagement_score || 0), 0) / postedPosts.length)
       : 0
     
     // Find highest engagement
     const highestEngagement = postedPosts.length > 0
-      ? Math.max(...postedPosts.map(p => p.engagement_score || 0))
+      ? Math.max(...postedPosts.map((p: PostHistoryItem) => p.engagement_score || 0))
       : 0
     
     // Calculate impression statistics
-    const postsWithImpressions = postedPosts.filter(p => p.impression_count !== null && p.impression_count > 0)
-    const totalImpressions = postsWithImpressions.reduce((sum, p) => sum + (p.impression_count || 0), 0)
+    const postsWithImpressions = postedPosts.filter((p: PostHistoryItem) => p.impression_count !== null && p.impression_count > 0)
+    const totalImpressions = postsWithImpressions.reduce((sum: number, p: PostHistoryItem) => sum + (p.impression_count || 0), 0)
     const averageImpressions = postsWithImpressions.length > 0
       ? Math.round(totalImpressions / postsWithImpressions.length)
       : 0
     
     // Calculate reach statistics
-    const postsWithReach = postedPosts.filter(p => p.reach_count !== null && p.reach_count > 0)
-    const totalReach = postsWithReach.reduce((sum, p) => sum + (p.reach_count || 0), 0)
+    const postsWithReach = postedPosts.filter((p: PostHistoryItem) => p.reach_count !== null && p.reach_count > 0)
+    const totalReach = postsWithReach.reduce((sum: number, p: PostHistoryItem) => sum + (p.reach_count || 0), 0)
     
     // Calculate average engagement rate
-    const postsWithEngagementRate = postedPosts.filter(p => p.engagement_rate !== null && p.engagement_rate > 0)
+    const postsWithEngagementRate = postedPosts.filter((p: PostHistoryItem) => p.engagement_rate !== null && p.engagement_rate > 0)
     const averageEngagementRate = postsWithEngagementRate.length > 0
-      ? parseFloat((postsWithEngagementRate.reduce((sum, p) => sum + (p.engagement_rate || 0), 0) / postsWithEngagementRate.length).toFixed(2))
+      ? parseFloat((postsWithEngagementRate.reduce((sum: number, p: PostHistoryItem) => sum + (p.engagement_rate || 0), 0) / postsWithEngagementRate.length).toFixed(2))
       : 0
     
     // Find top post (by engagement score, but include impressions)
     const topPostData = postedPosts.length > 0
-      ? postedPosts.reduce((top, current) => 
+      ? postedPosts.reduce((top: PostHistoryItem, current: PostHistoryItem) => 
           (current.engagement_score || 0) > (top.engagement_score || 0) ? current : top
         )
       : null
@@ -759,19 +781,19 @@ export async function getPostPerformanceStats(userId: string): Promise<PostPerfo
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     
-    const weeklyPosts = posts.filter(p => {
+    const weeklyPosts = posts.filter((p: PostHistoryItem) => {
       const postDate = new Date(p.created_at)
       return postDate >= weekAgo && p.status === 'posted'
     }).length
     
-    const monthlyPosts = posts.filter(p => {
+    const monthlyPosts = posts.filter((p: PostHistoryItem) => {
       const postDate = new Date(p.created_at)
       return postDate >= monthAgo && p.status === 'posted'
     }).length
 
     // Calculate hourly performance (0-23 hours)
     const hourlyPerformance = Array.from({ length: 24 }, (_, hour) => {
-      const hourPosts = postedPosts.filter(p => {
+      const hourPosts = postedPosts.filter((p: PostHistoryItem) => {
         const postDate = new Date(p.created_at)
         return postDate.getHours() === hour
       })
@@ -781,13 +803,13 @@ export async function getPostPerformanceStats(userId: string): Promise<PostPerfo
       }
       
       const avgEngagement = Math.round(
-        hourPosts.reduce((sum, p) => sum + (p.engagement_score || 0), 0) / hourPosts.length
+        hourPosts.reduce((sum: number, p: PostHistoryItem) => sum + (p.engagement_score || 0), 0) / hourPosts.length
       )
       
-      const hourPostsWithImpressions = hourPosts.filter(p => p.impression_count !== null && p.impression_count > 0)
+      const hourPostsWithImpressions = hourPosts.filter((p: PostHistoryItem) => p.impression_count !== null && p.impression_count > 0)
       const avgImpressions = hourPostsWithImpressions.length > 0
         ? Math.round(
-            hourPostsWithImpressions.reduce((sum, p) => sum + (p.impression_count || 0), 0) / hourPostsWithImpressions.length
+            hourPostsWithImpressions.reduce((sum: number, p: PostHistoryItem) => sum + (p.impression_count || 0), 0) / hourPostsWithImpressions.length
           )
         : 0
       
@@ -801,7 +823,7 @@ export async function getPostPerformanceStats(userId: string): Promise<PostPerfo
 
     // Calculate weekday performance (0 = Sunday, 6 = Saturday)
     const weekdayPerformance = Array.from({ length: 7 }, (_, weekday) => {
-      const weekdayPosts = postedPosts.filter(p => {
+      const weekdayPosts = postedPosts.filter((p: PostHistoryItem) => {
         const postDate = new Date(p.created_at)
         return postDate.getDay() === weekday
       })
@@ -811,13 +833,13 @@ export async function getPostPerformanceStats(userId: string): Promise<PostPerfo
       }
       
       const avgEngagement = Math.round(
-        weekdayPosts.reduce((sum, p) => sum + (p.engagement_score || 0), 0) / weekdayPosts.length
+        weekdayPosts.reduce((sum: number, p: PostHistoryItem) => sum + (p.engagement_score || 0), 0) / weekdayPosts.length
       )
       
-      const weekdayPostsWithImpressions = weekdayPosts.filter(p => p.impression_count !== null && p.impression_count > 0)
+      const weekdayPostsWithImpressions = weekdayPosts.filter((p: PostHistoryItem) => p.impression_count !== null && p.impression_count > 0)
       const avgImpressions = weekdayPostsWithImpressions.length > 0
         ? Math.round(
-            weekdayPostsWithImpressions.reduce((sum, p) => sum + (p.impression_count || 0), 0) / weekdayPostsWithImpressions.length
+            weekdayPostsWithImpressions.reduce((sum: number, p: PostHistoryItem) => sum + (p.impression_count || 0), 0) / weekdayPostsWithImpressions.length
           )
         : 0
       
@@ -1397,7 +1419,7 @@ export async function getImprovementSuggestions(
     if (!posts || posts.length === 0) return []
 
     // Identify low-performing posts (below average engagement or impressions)
-    const lowPerformingPosts = posts.filter(post => {
+    const lowPerformingPosts = posts.filter((post: PostHistoryItem) => {
       const engagement = post.engagement_score || 0
       const impressions = post.impression_count || 0
       

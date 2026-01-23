@@ -2591,7 +2591,6 @@ function DashboardContent() {
             </div>
           )}
 
-        {/* History */}
           {/* Drafts View */}
           {showDrafts && (
             <div className="space-y-6">
@@ -2697,7 +2696,6 @@ function DashboardContent() {
                                   } catch (error) {
                                     showToast("投稿に失敗しました", "error")
                                   }
-                                }
                               }}
                               className="flex-1 rounded-full"
                             >
