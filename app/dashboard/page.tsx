@@ -1457,20 +1457,26 @@ function DashboardContent() {
                               hashtags: []
                             }
                             
+                            let result
                             if (manualTweetImage) {
-                              await approveAndPostTweetWithImage(
+                              if (!twitterAccessToken) {
+                                showToast("Twitter連携が必要です", "warning")
+                                return
+                              }
+                              result = await approveAndPostTweetWithImage(
                                 user.id,
                                 draft,
-                                manualTweetImage,
+                                twitterAccessToken,
                                 currentTrend || "",
-                                currentPurpose || ""
+                                currentPurpose || "",
+                                manualTweetImage
                               )
                             } else {
                               if (!twitterAccessToken) {
                                 showToast("Twitter連携が必要です", "warning")
                                 return
                               }
-                              await approveAndPostTweet(
+                              result = await approveAndPostTweet(
                                 user.id,
                                 draft,
                                 twitterAccessToken,
@@ -1479,10 +1485,18 @@ function DashboardContent() {
                               )
                             }
                             
-                            showToast("ツイートを投稿しました！", "success")
-                            setManualTweetText("")
-                            setManualTweetImage(null)
-                            loadPerformanceStats()
+                            if (result.success) {
+                              showToast("ツイートを投稿しました！", "success")
+                              setManualTweetText("")
+                              setManualTweetImage(null)
+                              loadPerformanceStats()
+                            } else {
+                              const errorMessage = result.error || "ツイートの投稿に失敗しました"
+                              showToast(errorMessage, "error")
+                              if (errorMessage.includes("認証") || errorMessage.includes("401")) {
+                                showToast("Twitter連携を再度行ってください", "warning")
+                              }
+                            }
                           } catch (error) {
                             console.error("Error posting tweet:", error)
                             const errorMessage = error instanceof Error ? error.message : "投稿に失敗しました"
@@ -2575,7 +2589,7 @@ function DashboardContent() {
                               onClick={async () => {
                                 if (user && twitterAccessToken) {
                                   try {
-                                    await approveAndPostTweet(
+                                    const result = await approveAndPostTweet(
                                       user.id,
                                       {
                                         text: post.text,
@@ -2586,7 +2600,17 @@ function DashboardContent() {
                                       post.trend || "",
                                       post.purpose || ""
                                     )
-                                    showToast("ツイートを投稿しました", "success")
+                                    
+                                    if (result.success) {
+                                      showToast("ツイートを投稿しました", "success")
+                                      await loadPostHistory()
+                                    } else {
+                                      const errorMessage = result.error || "投稿に失敗しました"
+                                      showToast(errorMessage, "error")
+                                      if (errorMessage.includes("認証") || errorMessage.includes("401")) {
+                                        showToast("Twitter連携を再度行ってください", "warning")
+                                      }
+                                    }
                                     await loadPostHistory()
                                   } catch (error) {
                                     showToast("投稿に失敗しました", "error")
