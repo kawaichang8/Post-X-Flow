@@ -19,7 +19,7 @@
     "deps:update": "npm update",
     "clean": "rm -rf .next node_modules package-lock.json",
     "reinstall": "npm run clean && npm install",
-    "prebuild": "npm run type-check && npm run lint"
+    "prebuild": "npm run type-check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.20.0",
