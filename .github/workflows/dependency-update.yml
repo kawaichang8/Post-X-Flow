@@ -1,0 +1,58 @@
+name: Dependency Update Check
+
+on:
+  schedule:
+    # 毎週月曜日の午前9時（JST）に実行
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    name: Check for Dependency Updates
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      
+      - name: Check for outdated packages
+        run: npm outdated || true
+        id: outdated
+      
+      - name: Create issue if updates available
+        if: steps.outdated.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const outdated = execSync('npm outdated --json', { encoding: 'utf-8' });
+            const packages = JSON.parse(outdated);
+            
+            if (Object.keys(packages).length > 0) {
+              const body = `## 依存関係の更新が必要です\n\n` +
+                `以下のパッケージに更新が利用可能です:\n\n` +
+                Object.entries(packages).map(([name, info]) => 
+                  `- **${name}**: ${info.current} → ${info.wanted} (latest: ${info.latest})`
+                ).join('\n') +
+                `\n\n### 推奨アクション\n` +
+                `1. 更新前に互換性を確認\n` +
+                `2. テストを実行\n` +
+                `3. 段階的に更新`;
+              
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🔔 依存関係の更新チェック',
+                body: body,
+                labels: ['dependencies', 'automated']
+              });
+            }
