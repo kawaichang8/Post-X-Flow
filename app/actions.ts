@@ -50,7 +50,8 @@ export async function approveAndPostTweet(
   draft: PostDraft,
   accessToken: string,
   trend: string,
-  purpose: string
+  purpose: string,
+  twitterAccountId?: string
 ): Promise<{ success: boolean; tweetId?: string; error?: string }> {
   try {
     // Try to post to Twitter
@@ -134,6 +135,7 @@ export async function approveAndPostTweet(
     const supabaseAdmin = createServerClient()
     const { error } = await supabaseAdmin.from("post_history").insert({
       user_id: userId,
+      twitter_account_id: twitterAccountId || null,
       text: draft.text,
       hashtags: draft.hashtags,
       naturalness_score: draft.naturalnessScore,
@@ -171,7 +173,8 @@ export async function approveAndPostTweetWithImage(
   accessToken: string,
   trend: string,
   purpose: string,
-  imageUrl?: string
+  imageUrl?: string,
+  twitterAccountId?: string
 ): Promise<{ success: boolean; tweetId?: string; error?: string }> {
   try {
     const { postTweet, getTweetEngagement, refreshTwitterAccessToken, uploadMedia } = await import("@/lib/x-post")
@@ -283,6 +286,7 @@ export async function approveAndPostTweetWithImage(
     const supabaseAdmin = createServerClient()
     const { error } = await supabaseAdmin.from("post_history").insert({
       user_id: userId,
+      twitter_account_id: twitterAccountId || null,
       text: draft.text,
       hashtags: draft.hashtags,
       naturalness_score: draft.naturalnessScore,
@@ -587,20 +591,38 @@ export async function getHighEngagementPosts(userId: string) {
   }
 }
 
-export async function getPostHistory(userId: string, limit: number = 50) {
+export async function getPostHistory(userId: string, limit: number = 50, accountId?: string) {
   try {
     // Use service role client to bypass RLS in Server Actions
     const supabaseAdmin = createServerClient()
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("post_history")
-      .select("*")
+      .select(`
+        *,
+        twitter_account:user_twitter_tokens!post_history_twitter_account_id_fkey(
+          username,
+          display_name,
+          account_name
+        )
+      `)
       .eq("user_id", userId)
+    
+    // Filter by account if specified
+    if (accountId) {
+      query = query.eq("twitter_account_id", accountId)
+    }
+    
+    const { data, error } = await query
       .order("created_at", { ascending: false })
       .limit(limit)
 
     if (error) throw error
 
-    return data || []
+    // Transform data to include account info
+    return (data || []).map((item: any) => ({
+      ...item,
+      twitter_account: item.twitter_account || null
+    }))
   } catch (error) {
     console.error("Error fetching post history:", error)
     return []

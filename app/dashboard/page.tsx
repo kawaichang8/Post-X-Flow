@@ -44,6 +44,12 @@ interface PostHistoryItem {
   reply_count: number
   quote_count: number
   created_at: string
+  twitter_account_id: string | null
+  twitter_account?: {
+    username: string | null
+    display_name: string | null
+    account_name: string | null
+  }
 }
 
 interface User {
@@ -87,6 +93,7 @@ function DashboardContent() {
   const [editScheduleDateTime, setEditScheduleDateTime] = useState("")
   const [historySearchQuery, setHistorySearchQuery] = useState("")
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>("all")
+  const [historyAccountFilter, setHistoryAccountFilter] = useState<string>("all")
   const [historySortBy, setHistorySortBy] = useState<string>("newest")
   const [scheduleSearchQuery, setScheduleSearchQuery] = useState("")
   const [scheduleDateFilter, setScheduleDateFilter] = useState<string>("all") // all, today, week, month
@@ -218,7 +225,7 @@ function DashboardContent() {
     if (showHistory && user) {
       loadPostHistory()
     }
-  }, [showHistory, user])
+  }, [showHistory, user, historyAccountFilter])
 
   useEffect(() => {
     if (showAnalytics && user) {
@@ -410,7 +417,8 @@ function DashboardContent() {
     if (!user) return
     setIsLoadingHistory(true)
     try {
-      const history = await getPostHistory(user.id, 50)
+      const accountId = historyAccountFilter !== "all" ? historyAccountFilter : undefined
+      const history = await getPostHistory(user.id, 50, accountId)
       setPostHistory(history as PostHistoryItem[])
     } catch (error) {
       console.error("Error loading post history:", error)
@@ -638,25 +646,41 @@ function DashboardContent() {
       const draftIndex = drafts.findIndex(d => d.text === draft.text)
       const imageUrl = draftIndex >= 0 ? draftImages.get(draftIndex) || null : null
 
+      // Get selected account's token
+      if (!selectedAccountId) {
+        showToast("アカウントを選択してください", "warning")
+        return
+      }
+      
+      const selectedAccount = twitterAccounts.find(acc => acc.id === selectedAccountId)
+      if (!selectedAccount || !selectedAccount.access_token) {
+        showToast("選択されたアカウントのトークンが見つかりません", "error")
+        return
+      }
+      
+      const accountAccessToken = selectedAccount.access_token
+      
       let result
       if (imageUrl) {
         // Post with image
         result = await approveAndPostTweetWithImage(
           user.id,
           draft,
-          twitterAccessToken,
+          accountAccessToken,
           currentTrend,
           currentPurpose,
-          imageUrl
+          imageUrl,
+          selectedAccountId
         )
       } else {
         // Post without image
         result = await approveAndPostTweet(
           user.id,
           draft,
-          twitterAccessToken,
+          accountAccessToken,
           currentTrend,
-          currentPurpose
+          currentPurpose,
+          selectedAccountId
         )
       }
       
@@ -1457,31 +1481,39 @@ function DashboardContent() {
                               hashtags: []
                             }
                             
+                            // Get selected account's token
+                            if (!selectedAccountId) {
+                              showToast("アカウントを選択してください", "warning")
+                              return
+                            }
+                            
+                            const selectedAccount = twitterAccounts.find(acc => acc.id === selectedAccountId)
+                            if (!selectedAccount || !selectedAccount.access_token) {
+                              showToast("選択されたアカウントのトークンが見つかりません", "error")
+                              return
+                            }
+                            
+                            const accountAccessToken = selectedAccount.access_token
+                            
                             let result
                             if (manualTweetImage) {
-                              if (!twitterAccessToken) {
-                                showToast("Twitter連携が必要です", "warning")
-                                return
-                              }
                               result = await approveAndPostTweetWithImage(
                                 user.id,
                                 draft,
-                                twitterAccessToken,
+                                accountAccessToken,
                                 currentTrend || "",
                                 currentPurpose || "",
-                                manualTweetImage
+                                manualTweetImage,
+                                selectedAccountId
                               )
                             } else {
-                              if (!twitterAccessToken) {
-                                showToast("Twitter連携が必要です", "warning")
-                                return
-                              }
                               result = await approveAndPostTweet(
                                 user.id,
                                 draft,
-                                twitterAccessToken,
+                                accountAccessToken,
                                 currentTrend || "",
-                                currentPurpose || ""
+                                currentPurpose || "",
+                                selectedAccountId
                               )
                             }
                             
@@ -2587,19 +2619,30 @@ function DashboardContent() {
                               variant="outline"
                               size="sm"
                               onClick={async () => {
-                                if (user && twitterAccessToken) {
-                                  try {
-                                    const result = await approveAndPostTweet(
-                                      user.id,
-                                      {
-                                        text: post.text,
-                                        naturalnessScore: post.naturalness_score,
-                                        hashtags: post.hashtags
-                                      },
-                                      twitterAccessToken,
-                                      post.trend || "",
-                                      post.purpose || ""
-                                    )
+                                if (!user || !selectedAccountId) {
+                                  showToast("アカウントを選択してください", "warning")
+                                  return
+                                }
+                                
+                                const selectedAccount = twitterAccounts.find(acc => acc.id === selectedAccountId)
+                                if (!selectedAccount || !selectedAccount.access_token) {
+                                  showToast("選択されたアカウントのトークンが見つかりません", "error")
+                                  return
+                                }
+                                
+                                try {
+                                  const result = await approveAndPostTweet(
+                                    user.id,
+                                    {
+                                      text: post.text,
+                                      naturalnessScore: post.naturalness_score,
+                                      hashtags: post.hashtags
+                                    },
+                                    selectedAccount.access_token,
+                                    post.trend || "",
+                                    post.purpose || "",
+                                    selectedAccountId
+                                  )
                                     
                                     if (result.success) {
                                       showToast("ツイートを投稿しました", "success")
@@ -3051,6 +3094,30 @@ function DashboardContent() {
                   </SelectContent>
                 </Select>
 
+                {/* Account Filter */}
+                <Select value={historyAccountFilter} onValueChange={(value) => {
+                  setHistoryAccountFilter(value)
+                  // Reload history when filter changes
+                  setTimeout(() => {
+                    if (user) {
+                      loadPostHistory()
+                    }
+                  }, 100)
+                }}>
+                  <SelectTrigger className="w-full sm:w-[180px] bg-white dark:bg-black border-gray-200 dark:border-gray-800">
+                    <User className="mr-2 h-4 w-4" />
+                    <SelectValue placeholder="アカウント" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">すべてのアカウント</SelectItem>
+                    {twitterAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.account_name || account.username || account.display_name || "アカウント"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
                 {/* Sort */}
                 <Select value={historySortBy} onValueChange={setHistorySortBy}>
                   <SelectTrigger className="w-full sm:w-[180px] bg-white dark:bg-black border-gray-200 dark:border-gray-800">
@@ -3154,6 +3221,15 @@ function DashboardContent() {
                     >
                       <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                         <div className="flex-1 space-y-2 min-w-0">
+                          {/* Account Badge */}
+                          {post.twitter_account && (
+                            <div className="flex items-center gap-2 mb-2">
+                              <User className="h-3 w-3 text-gray-400" />
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {post.twitter_account.account_name || post.twitter_account.username || post.twitter_account.display_name || "アカウント"}
+                              </span>
+                            </div>
+                          )}
                           <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed break-words text-gray-900 dark:text-white">{post.text}</p>
                           
                           {post.hashtags && post.hashtags.length > 0 && (

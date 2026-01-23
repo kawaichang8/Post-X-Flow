@@ -78,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_twitter_oauth_sessions_expires_at ON twitter_oaut
 CREATE TABLE IF NOT EXISTS post_history (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  twitter_account_id UUID REFERENCES user_twitter_tokens(id) ON DELETE SET NULL, -- Which Twitter account was used
   text TEXT NOT NULL,
   hashtags TEXT[] DEFAULT '{}',
   naturalness_score INTEGER CHECK (naturalness_score >= 0 AND naturalness_score <= 100),
@@ -187,6 +188,14 @@ BEGIN
     WHERE table_name = 'post_history' AND column_name = 'quote_count'
   ) THEN
     ALTER TABLE post_history ADD COLUMN quote_count INTEGER DEFAULT 0;
+  END IF;
+
+  -- Add twitter_account_id column if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'post_history' AND column_name = 'twitter_account_id'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN twitter_account_id UUID REFERENCES user_twitter_tokens(id) ON DELETE SET NULL;
   END IF;
 END $$;
 
