@@ -652,11 +652,24 @@ function DashboardContent() {
         return
       }
       
+      // Reload accounts to ensure we have the latest token
+      await loadTwitterAccounts()
+      
       const selectedAccount = twitterAccounts.find(acc => acc.id === selectedAccountId)
       if (!selectedAccount || !selectedAccount.access_token) {
         showToast("選択されたアカウントのトークンが見つかりません", "error")
+        console.error("Selected account not found:", {
+          selectedAccountId,
+          availableAccounts: twitterAccounts.map(acc => ({ id: acc.id, username: acc.username }))
+        })
         return
       }
+      
+      console.log("Posting with account:", {
+        accountId: selectedAccountId,
+        username: selectedAccount.username,
+        accountName: selectedAccount.account_name
+      })
       
       const accountAccessToken = selectedAccount.access_token
       
@@ -1487,11 +1500,24 @@ function DashboardContent() {
                               return
                             }
                             
+                            // Reload accounts to ensure we have the latest token
+                            await loadTwitterAccounts()
+                            
                             const selectedAccount = twitterAccounts.find(acc => acc.id === selectedAccountId)
                             if (!selectedAccount || !selectedAccount.access_token) {
                               showToast("選択されたアカウントのトークンが見つかりません", "error")
+                              console.error("Selected account not found:", {
+                                selectedAccountId,
+                                availableAccounts: twitterAccounts.map(acc => ({ id: acc.id, username: acc.username }))
+                              })
                               return
                             }
+                            
+                            console.log("Posting with account:", {
+                              accountId: selectedAccountId,
+                              username: selectedAccount.username,
+                              accountName: selectedAccount.account_name
+                            })
                             
                             const accountAccessToken = selectedAccount.access_token
                             
@@ -2624,11 +2650,24 @@ function DashboardContent() {
                                   return
                                 }
                                 
+                                // Reload accounts to ensure we have the latest token
+                                await loadTwitterAccounts()
+                                
                                 const selectedAccount = twitterAccounts.find(acc => acc.id === selectedAccountId)
                                 if (!selectedAccount || !selectedAccount.access_token) {
                                   showToast("選択されたアカウントのトークンが見つかりません", "error")
+                                  console.error("Selected account not found:", {
+                                    selectedAccountId,
+                                    availableAccounts: twitterAccounts.map(acc => ({ id: acc.id, username: acc.username }))
+                                  })
                                   return
                                 }
+                                
+                                console.log("Reposting with account:", {
+                                  accountId: selectedAccountId,
+                                  username: selectedAccount.username,
+                                  accountName: selectedAccount.account_name
+                                })
                                 
                                 try {
                                   const result = await approveAndPostTweet(

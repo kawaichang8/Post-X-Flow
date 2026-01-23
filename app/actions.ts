@@ -65,13 +65,19 @@ export async function approveAndPostTweet(
       if (error?.code === 401) {
         console.log("[Post Tweet] Access token expired, attempting to refresh...")
         
-        // Get refresh token from database
+        // Get refresh token from database for the specific account
         const supabaseAdmin = createServerClient()
-        const { data: tokenData, error: tokenError } = await supabaseAdmin
+        let query = supabaseAdmin
           .from("user_twitter_tokens")
           .select("refresh_token")
           .eq("user_id", userId)
-          .single()
+        
+        // If twitterAccountId is provided, use it to get the specific account's token
+        if (twitterAccountId) {
+          query = query.eq("id", twitterAccountId)
+        }
+        
+        const { data: tokenData, error: tokenError } = await query.single()
 
         if (tokenError || !tokenData?.refresh_token) {
           throw new Error('Twitter認証エラー: リフレッシュトークンが見つかりません。Twitter連携を再度行ってください。')
@@ -80,8 +86,8 @@ export async function approveAndPostTweet(
         // Refresh access token
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await refreshTwitterAccessToken(tokenData.refresh_token)
 
-        // Update tokens in database
-        const { error: updateError } = await supabaseAdmin
+        // Update tokens in database for the specific account
+        let updateQuery = supabaseAdmin
           .from("user_twitter_tokens")
           .update({
             access_token: newAccessToken,
@@ -89,6 +95,13 @@ export async function approveAndPostTweet(
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", userId)
+        
+        // If twitterAccountId is provided, update only that account
+        if (twitterAccountId) {
+          updateQuery = updateQuery.eq("id", twitterAccountId)
+        }
+        
+        const { error: updateError } = await updateQuery
 
         if (updateError) {
           console.error("[Post Tweet] Error updating refreshed tokens:", updateError)
@@ -205,13 +218,19 @@ export async function approveAndPostTweetWithImage(
       if (error?.code === 401) {
         console.log("[Post Tweet with Image] Access token expired, attempting to refresh...")
         
-        // Get refresh token from database
+        // Get refresh token from database for the specific account
         const supabaseAdmin = createServerClient()
-        const { data: tokenData, error: tokenError } = await supabaseAdmin
+        let query = supabaseAdmin
           .from("user_twitter_tokens")
           .select("refresh_token")
           .eq("user_id", userId)
-          .single()
+        
+        // If twitterAccountId is provided, use it to get the specific account's token
+        if (twitterAccountId) {
+          query = query.eq("id", twitterAccountId)
+        }
+        
+        const { data: tokenData, error: tokenError } = await query.single()
 
         if (tokenError || !tokenData?.refresh_token) {
           throw new Error('Twitter認証エラー: リフレッシュトークンが見つかりません。Twitter連携を再度行ってください。')
@@ -220,8 +239,8 @@ export async function approveAndPostTweetWithImage(
         // Refresh access token
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await refreshTwitterAccessToken(tokenData.refresh_token)
 
-        // Update tokens in database
-        const { error: updateError } = await supabaseAdmin
+        // Update tokens in database for the specific account
+        let updateQuery = supabaseAdmin
           .from("user_twitter_tokens")
           .update({
             access_token: newAccessToken,
@@ -229,6 +248,13 @@ export async function approveAndPostTweetWithImage(
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", userId)
+        
+        // If twitterAccountId is provided, update only that account
+        if (twitterAccountId) {
+          updateQuery = updateQuery.eq("id", twitterAccountId)
+        }
+        
+        const { error: updateError } = await updateQuery
 
         if (updateError) {
           console.error("[Post Tweet with Image] Error updating refreshed tokens:", updateError)
