@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
 
     console.log("[Twitter OAuth Callback] Access token received, fetching user info...")
     
-    // Get Twitter user information
+    // Get Twitter user information - this is required to identify the account
     let userInfo
     try {
       userInfo = await getTwitterUserInfo(accessToken)
@@ -84,8 +84,14 @@ export async function GET(request: NextRequest) {
       })
     } catch (error) {
       console.error("[Twitter OAuth Callback] Error fetching user info:", error)
-      // Continue anyway, we can update it later
-      userInfo = null
+      // Cannot proceed without user info - we need twitter_user_id to check for duplicates
+      return NextResponse.redirect(`${baseUrl}/dashboard?error=user_info_fetch_failed&details=${encodeURIComponent(error instanceof Error ? error.message : "Failed to fetch user information")}`)
+    }
+
+    // Validate userInfo
+    if (!userInfo || !userInfo.id) {
+      console.error("[Twitter OAuth Callback] Invalid user info:", userInfo)
+      return NextResponse.redirect(`${baseUrl}/dashboard?error=invalid_user_info`)
     }
 
     // Log all existing accounts for this user (for debugging)
@@ -102,15 +108,16 @@ export async function GET(request: NextRequest) {
     })))
 
     console.log("[Twitter OAuth Callback] Storing account in database...")
-    console.log("[Twitter OAuth Callback] Twitter user ID:", userInfo?.id)
-    console.log("[Twitter OAuth Callback] Twitter username:", userInfo?.username)
+    console.log("[Twitter OAuth Callback] Twitter user ID:", userInfo.id)
+    console.log("[Twitter OAuth Callback] Twitter username:", userInfo.username)
     
     // Check if this Twitter account is already linked to this user
+    // Use twitter_user_id to identify the account (not username, as it can change)
     const { data: existingAccount, error: checkError } = await supabaseAdmin
       .from("user_twitter_tokens")
       .select("id, is_default, username, twitter_user_id, account_name")
       .eq("user_id", userId)
-      .eq("twitter_user_id", userInfo?.id || "")
+      .eq("twitter_user_id", userInfo.id)
       .maybeSingle()
 
     if (checkError && checkError.code !== 'PGRST116') {
@@ -126,15 +133,16 @@ export async function GET(request: NextRequest) {
         account_name: existingAccount.account_name
       })
       // If this is the same account, just update tokens (refresh)
+      // This prevents duplicate accounts from being created
       console.log("[Twitter OAuth Callback] Updating existing account (refreshing tokens)...")
       const { error: updateError } = await supabaseAdmin
         .from("user_twitter_tokens")
         .update({
           access_token: accessToken,
           refresh_token: refreshToken,
-          username: userInfo?.username || null,
-          display_name: userInfo?.name || null,
-          profile_image_url: userInfo?.profile_image_url || null,
+          username: userInfo.username || null,
+          display_name: userInfo.name || null,
+          profile_image_url: userInfo.profile_image_url || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", existingAccount.id)
@@ -145,7 +153,8 @@ export async function GET(request: NextRequest) {
       }
       
       console.log("[Twitter OAuth Callback] Existing account updated successfully")
-      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_updated=true`)
+      // Show message that account was already connected and tokens were refreshed
+      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_updated=true&message=${encodeURIComponent("このアカウントは既に連携されています。トークンを更新しました。")}`)
     }
 
     // This is a new account - add it
@@ -165,13 +174,13 @@ export async function GET(request: NextRequest) {
       .from("user_twitter_tokens")
       .insert({
         user_id: userId,
-        twitter_user_id: userInfo?.id || null,
+        twitter_user_id: userInfo.id, // Required - cannot be null
         access_token: accessToken,
         refresh_token: refreshToken,
-        username: userInfo?.username || null,
-        display_name: userInfo?.name || null,
-        profile_image_url: userInfo?.profile_image_url || null,
-        account_name: userInfo?.username || null, // Default account name to username
+        username: userInfo.username || null,
+        display_name: userInfo.name || null,
+        profile_image_url: userInfo.profile_image_url || null,
+        account_name: userInfo.username || null, // Default account name to username
         is_default: isDefault,
         updated_at: new Date().toISOString(),
       })
