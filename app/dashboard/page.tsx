@@ -981,7 +981,9 @@ function DashboardContent() {
       if (twitterConnected && twitterAccounts.length > 0) {
         const confirmed = window.confirm(
           "別のアカウントを追加します。\n\n" +
-          "ログイン画面が表示されますので、追加したいアカウントでログインしてください。\n\n" +
+          "【重要】ログアウトしたアカウントが表示される場合：\n" +
+          "1. 認証画面で「別のアカウントでログイン」をクリック\n" +
+          "2. または、X側で一度ログアウトしてから再度試してください\n\n" +
           "続行しますか？"
         )
         if (!confirmed) return
@@ -989,7 +991,9 @@ function DashboardContent() {
 
       // Redirect to X OAuth
       // Always use force_login=true to show login screen and prevent selecting logged-out accounts
-      window.location.href = `/api/auth/twitter?userId=${userId}`
+      // Add timestamp to make URL unique and bypass browser cache
+      const timestamp = Date.now()
+      window.location.href = `/api/auth/twitter?userId=${userId}&_t=${timestamp}`
     } catch (error) {
       console.error("Error connecting to X:", error)
       const errorMessage = error instanceof Error ? error.message : "Twitter連携の開始に失敗しました"
@@ -3635,12 +3639,16 @@ function DashboardContent() {
                               <li>「アカウントを追加」ボタンをクリック</li>
                               <li>ログイン画面が表示されます</li>
                               <li>追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力</li>
-                              <li>既にログインしているアカウントが表示される場合は、「別のアカウントでログイン」を選択</li>
                             </ol>
                             <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
-                              <p className="text-xs text-blue-600 dark:text-blue-400">
-                                💡 ヒント: ログイン画面が表示されるので、追加したいアカウントでログインしてください。
+                              <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 mb-1">
+                                ⚠️ ログアウトしたアカウントが表示される場合：
                               </p>
+                              <ul className="list-disc list-inside space-y-0.5 text-xs text-blue-600 dark:text-blue-400 ml-2">
+                                <li>認証画面で「別のアカウントでログイン」をクリック</li>
+                                <li>または、X側で一度ログアウトしてから再度試してください</li>
+                                <li>ブラウザのキャッシュをクリアしてから再度試すことも有効です</li>
+                              </ul>
                             </div>
                           </div>
                         </div>

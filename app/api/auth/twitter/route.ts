@@ -22,6 +22,17 @@ export async function GET(request: NextRequest) {
     const { url, codeVerifier, state } = await getTwitterAuthUrl(true)
 
     console.log("[Twitter OAuth] Auth URL generated, storing in database...")
+    console.log("[Twitter OAuth] Generated URL:", url)
+    console.log("[Twitter OAuth] URL contains force_login:", url.includes('force_login=true'))
+    
+    // Parse URL to verify parameters
+    try {
+      const urlObj = new URL(url)
+      console.log("[Twitter OAuth] URL parameters:", Object.fromEntries(urlObj.searchParams))
+      console.log("[Twitter OAuth] force_login parameter value:", urlObj.searchParams.get('force_login'))
+    } catch (e) {
+      console.error("[Twitter OAuth] Error parsing URL:", e)
+    }
     
     // Store state, codeVerifier, and user ID in database (more reliable than cookies with ngrok)
     const supabaseAdmin = createServerClient()

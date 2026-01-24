@@ -40,10 +40,17 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     if (forceLogin) {
       authUrl.searchParams.set('force_login', 'true')
     }
+    
+    // Add timestamp to make URL unique and bypass browser cache
+    // This helps prevent Twitter from using cached session data
+    // Note: This is a workaround for Twitter OAuth 2.0's session caching issue
+    const timestamp = Date.now()
+    authUrl.searchParams.set('_t', timestamp.toString())
 
     console.log('[Twitter OAuth] Auth URL generated successfully', forceLogin ? '(with force_login=true)' : '')
     console.log('[Twitter OAuth] Final auth URL:', authUrl.toString())
     console.log('[Twitter OAuth] URL parameters:', Object.fromEntries(authUrl.searchParams))
+    console.log('[Twitter OAuth] Timestamp added:', timestamp)
     return { url: authUrl.toString(), codeVerifier, state }
   } catch (error) {
     console.error('[Twitter OAuth] Error generating auth URL:', error)
