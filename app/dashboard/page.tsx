@@ -977,10 +977,8 @@ function DashboardContent() {
         return
       }
 
-      // Check if adding a new account (vs first-time connection)
-      const isAddingAccount = twitterConnected && twitterAccounts.length > 0
-      
-      if (isAddingAccount) {
+      // Show instruction
+      if (twitterConnected && twitterAccounts.length > 0) {
         const confirmed = window.confirm(
           "別のアカウントを追加します。\n\n" +
           "ログイン画面が表示されますので、追加したいアカウントでログインしてください。\n\n" +
@@ -990,10 +988,8 @@ function DashboardContent() {
       }
 
       // Redirect to X OAuth
-      // For adding accounts, use force_login=true to show login screen
-      // For first-time connection, use force_login=false to allow current X session
-      const addAccountParam = isAddingAccount ? "&addAccount=true" : ""
-      window.location.href = `/api/auth/twitter?userId=${userId}${addAccountParam}`
+      // Always use force_login=true to show login screen and prevent selecting logged-out accounts
+      window.location.href = `/api/auth/twitter?userId=${userId}`
     } catch (error) {
       console.error("Error connecting to X:", error)
       const errorMessage = error instanceof Error ? error.message : "Twitter連携の開始に失敗しました"
