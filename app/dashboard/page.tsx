@@ -3470,21 +3470,13 @@ function DashboardContent() {
                     Xアカウントの管理（複数アカウント対応）
                   </p>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Button
-                    onClick={handleConnectTwitter}
-                    className="rounded-full"
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    {twitterConnected ? "アカウントを追加" : "X連携"}
-                  </Button>
-                  {twitterConnected && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                      💡 別のアカウントを追加する場合は、<br />
-                      Twitter側でログアウトしてから追加してください
-                    </p>
-                  )}
-                </div>
+                <Button
+                  onClick={handleConnectTwitter}
+                  className="rounded-full"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  {twitterConnected ? "アカウントを追加" : "X連携"}
+                </Button>
               </div>
               {twitterConnected && twitterAccounts.length > 0 ? (
                 <div className="space-y-4">
@@ -3621,11 +3613,8 @@ function DashboardContent() {
                           アカウントを追加
                         </Button>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          複数のXアカウントを連携できます
-                        </p>
-                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 font-medium">
-                          💡 別のアカウントを追加する場合は、<br />
-                          Twitter側でログアウトしてから追加してください
+                          複数のXアカウントを連携できます<br />
+                          💡 追加時にTwitter側でアカウントを切り替えられます
                         </p>
                       </div>
                     </CardContent>
