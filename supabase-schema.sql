@@ -25,6 +25,7 @@ ALTER TABLE user_twitter_tokens ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view own tokens" ON user_twitter_tokens;
 DROP POLICY IF EXISTS "Users can insert own tokens" ON user_twitter_tokens;
 DROP POLICY IF EXISTS "Users can update own tokens" ON user_twitter_tokens;
+DROP POLICY IF EXISTS "Users can delete own tokens" ON user_twitter_tokens;
 
 -- RLS Policy: Users can only see their own tokens
 CREATE POLICY "Users can view own tokens"
@@ -40,6 +41,11 @@ CREATE POLICY "Users can insert own tokens"
 CREATE POLICY "Users can update own tokens"
   ON user_twitter_tokens
   FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own tokens"
+  ON user_twitter_tokens
+  FOR DELETE
   USING (auth.uid() = user_id);
 
 -- Table: twitter_oauth_sessions

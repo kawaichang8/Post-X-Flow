@@ -981,9 +981,12 @@ function DashboardContent() {
       if (twitterConnected && twitterAccounts.length > 0) {
         const confirmed = window.confirm(
           "別のアカウントを追加します。\n\n" +
-          "Twitter側のログイン画面で、追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力してください。\n\n" +
-          "既にログインしているアカウントが表示される場合は、\n" +
-          "「別のアカウントでログイン」または「アカウントを切り替える」をクリックしてください。\n\n" +
+          "【重要】別のアカウントを追加するには：\n\n" +
+          "1. Twitter/Xのログイン画面が表示されます\n" +
+          "2. 既にログインしているアカウントが表示される場合：\n" +
+          "   → 画面下部の「別のアカウントでログイン」をクリック\n" +
+          "   → または、Twitter/Xアプリから一度ログアウトしてから再度試してください\n\n" +
+          "3. 追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力\n\n" +
           "続行しますか？"
         )
         if (!confirmed) return
@@ -3566,7 +3569,14 @@ function DashboardContent() {
                                 variant="outline"
                                 size="sm"
                                 onClick={async () => {
-                                  if (user && window.confirm("このアカウントを削除しますか？")) {
+                                  if (!user) return
+                                  
+                                  const isLastAccount = twitterAccounts.length === 1
+                                  const confirmMessage = isLastAccount
+                                    ? "最後のアカウントを削除しますか？\n\n削除すると、X連携が解除されます。"
+                                    : "このアカウントを削除しますか？"
+                                  
+                                  if (window.confirm(confirmMessage)) {
                                     try {
                                       // 削除するアカウントが選択中の場合は、別のアカウントを選択
                                       if (selectedAccountId === account.id && twitterAccounts.length > 1) {
@@ -3577,24 +3587,32 @@ function DashboardContent() {
                                         }
                                       }
                                       
-                                      await deleteTwitterAccount(account.id, user.id)
+                                      const result = await deleteTwitterAccount(account.id, user.id)
+                                      
+                                      if (!result.success) {
+                                        throw new Error(result.error || "アカウントの削除に失敗しました")
+                                      }
+                                      
+                                      // アカウントリストを再読み込み
                                       await loadTwitterAccounts()
                                       
-                                      if (twitterAccounts.length === 1) {
-                                        // 最後のアカウントを削除した場合
+                                      // 最後のアカウントを削除した場合の処理
+                                      if (isLastAccount) {
                                         setSelectedAccountId(null)
                                         setTwitterAccessToken(null)
                                         setTwitterConnected(false)
+                                        showToast("アカウントを削除しました。X連携が解除されました。", "success")
+                                      } else {
+                                        showToast("アカウントを削除しました", "success")
                                       }
-                                      
-                                      showToast("アカウントを削除しました", "success")
                                     } catch (error) {
-                                      showToast("アカウントの削除に失敗しました", "error")
+                                      console.error("Error deleting account:", error)
+                                      const errorMessage = error instanceof Error ? error.message : "アカウントの削除に失敗しました"
+                                      showToast(errorMessage, "error")
                                     }
                                   }
                                 }}
                                 className="rounded-full text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20"
-                                disabled={twitterAccounts.length === 1}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -3617,13 +3635,21 @@ function DashboardContent() {
                         </Button>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 space-y-1">
                           <p>複数のXアカウントを連携できます</p>
-                          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2 mt-2">
-                            <p className="font-medium text-blue-700 dark:text-blue-300 mb-1">💡 別のアカウントを追加する方法：</p>
-                            <ol className="list-decimal list-inside space-y-0.5 text-blue-600 dark:text-blue-400">
+                          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
+                            <p className="font-medium text-blue-700 dark:text-blue-300 mb-2">💡 別のアカウントを追加する方法：</p>
+                            <ol className="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400 text-left">
                               <li>「アカウントを追加」ボタンをクリック</li>
-                              <li>Twitter側のログイン画面で、追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力</li>
-                              <li>既にログインしているアカウントが表示される場合は、「別のアカウントでログイン」をクリック</li>
+                              <li>Twitter/Xのログイン画面が表示されます</li>
+                              <li className="font-semibold">既にログインしているアカウントが表示される場合：</li>
+                              <li className="ml-4 list-none">→ 画面下部の「別のアカウントでログイン」をクリック</li>
+                              <li className="ml-4 list-none">→ または、Twitter/Xアプリから一度ログアウトしてから再度試してください</li>
+                              <li>追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力</li>
                             </ol>
+                            <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
+                              <p className="text-xs text-blue-600 dark:text-blue-400">
+                                ⚠️ 注意: 既にログインしているアカウントが自動的に表示される場合があります。その場合は、必ず「別のアカウントでログイン」を選択してください。
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
