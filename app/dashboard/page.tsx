@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { GenerateForm } from "@/components/GenerateForm"
 import { PostDraft as PostDraftComponent } from "@/components/PostDraft"
 import { PostDraft } from "@/lib/ai-generator"
-import { generatePostDrafts, approveAndPostTweet, approveAndPostTweetWithImage, savePostToHistory, scheduleTweet, getHighEngagementPosts, getPostHistory, getPostHistoryPaginated, getPostPerformanceStats, PostPerformanceStats, updateAllTweetEngagements, getScheduledTweets, updateScheduledTweet, deleteScheduledTweet, getQuotedTweets, saveQuotedTweet, deleteQuotedTweet, QuotedTweet, postQuotedTweet, getOptimalPostingTimes, OptimalPostingTime, getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, setDefaultTwitterAccount, deleteTwitterAccount, TwitterAccount, getImprovementSuggestions, ImprovementSuggestion, generateSyntaxFormat, updateDraft, deleteDraft, searchLocations } from "@/app/actions"
+import { generatePostDrafts, approveAndPostTweet, approveAndPostTweetWithImage, savePostToHistory, scheduleTweet, getHighEngagementPosts, getPostHistory, getPostHistoryPaginated, getPostPerformanceStats, PostPerformanceStats, updateAllTweetEngagements, getScheduledTweets, updateScheduledTweet, deleteScheduledTweet, getQuotedTweets, saveQuotedTweet, deleteQuotedTweet, QuotedTweet, postQuotedTweet, getOptimalPostingTimes, OptimalPostingTime, getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, setDefaultTwitterAccount, deleteTwitterAccount, TwitterAccount, getImprovementSuggestions, ImprovementSuggestion, generateSyntaxFormat, improveTweetTextAction, updateDraft, deleteDraft, searchLocations } from "@/app/actions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -138,6 +138,14 @@ function DashboardContent() {
   const [manualTweetImage, setManualTweetImage] = useState<string | null>(null)
   const [manualTweetGif, setManualTweetGif] = useState<File | null>(null)
   const [isGeneratingSyntax, setIsGeneratingSyntax] = useState(false)
+  const [isImprovingText, setIsImprovingText] = useState(false)
+  const [improvedTextResult, setImprovedTextResult] = useState<{
+    improvedText: string
+    improvements: string[]
+    naturalnessScore: number
+    explanation: string
+  } | null>(null)
+  const [showImprovementModal, setShowImprovementModal] = useState(false)
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
   const [editingDraftText, setEditingDraftText] = useState("")
   const [showPoll, setShowPoll] = useState(false)
@@ -1193,37 +1201,75 @@ function DashboardContent() {
                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                           ツイート内容
                         </label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            if (!manualTweetText.trim()) {
-                              showToast("テキストを入力してから構文を生成してください", "warning")
-                              return
-                            }
-                            setIsGeneratingSyntax(true)
-                            try {
-                              const format = await generateSyntaxFormat(manualTweetText, currentPurpose || undefined)
-                              if (format) {
-                                setManualTweetText(format.formattedText)
-                                showToast("構文フォーマットを適用しました", "success")
-                              } else {
-                                showToast("構文の生成に失敗しました", "error")
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              if (!manualTweetText.trim()) {
+                                showToast("テキストを入力してから改善してください", "warning")
+                                return
                               }
-                            } catch (error) {
-                              console.error("Error generating syntax:", error)
-                              showToast("構文の生成に失敗しました", "error")
-                            } finally {
-                              setIsGeneratingSyntax(false)
-                            }
-                          }}
-                          disabled={isGeneratingSyntax || !manualTweetText.trim()}
-                          className="rounded-full text-xs"
-                        >
-                          <Code2 className={cn("mr-1.5 h-3.5 w-3.5", isGeneratingSyntax && "animate-spin")} />
-                          構文
-                        </Button>
+                              setIsImprovingText(true)
+                              try {
+                                const result = await improveTweetTextAction(
+                                  manualTweetText,
+                                  currentPurpose || undefined,
+                                  'grok'
+                                )
+                                if (result) {
+                                  setImprovedTextResult(result)
+                                  setShowImprovementModal(true)
+                                  showToast("テキストを改善しました", "success")
+                                } else {
+                                  showToast("テキストの改善に失敗しました", "error")
+                                }
+                              } catch (error) {
+                                console.error("Error improving text:", error)
+                                showToast("テキストの改善に失敗しました", "error")
+                              } finally {
+                                setIsImprovingText(false)
+                              }
+                            }}
+                            disabled={isImprovingText || !manualTweetText.trim()}
+                            className="rounded-full text-xs bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white border-0"
+                          >
+                            <Zap className={cn("mr-1.5 h-3.5 w-3.5", isImprovingText && "animate-spin")} />
+                            改善
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              if (!manualTweetText.trim()) {
+                                showToast("テキストを入力してから構文を生成してください", "warning")
+                                return
+                              }
+                              setIsGeneratingSyntax(true)
+                              try {
+                                const format = await generateSyntaxFormat(manualTweetText, currentPurpose || undefined)
+                                if (format) {
+                                  setManualTweetText(format.formattedText)
+                                  showToast("構文フォーマットを適用しました", "success")
+                                } else {
+                                  showToast("構文の生成に失敗しました", "error")
+                                }
+                              } catch (error) {
+                                console.error("Error generating syntax:", error)
+                                showToast("構文の生成に失敗しました", "error")
+                              } finally {
+                                setIsGeneratingSyntax(false)
+                              }
+                            }}
+                            disabled={isGeneratingSyntax || !manualTweetText.trim()}
+                            className="rounded-full text-xs"
+                          >
+                            <Code2 className={cn("mr-1.5 h-3.5 w-3.5", isGeneratingSyntax && "animate-spin")} />
+                            構文
+                          </Button>
+                        </div>
                       </div>
                       <textarea
                         value={manualTweetText}
@@ -1790,6 +1836,140 @@ function DashboardContent() {
                   </Card>
                 </div>
               </div>
+
+              {/* Improvement Result Modal */}
+              {showImprovementModal && improvedTextResult && (
+                <div className="fixed inset-0 bg-black/50 dark:bg-black/80 z-50 flex items-center justify-center p-4">
+                  <Card className="w-full max-w-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl max-h-[90vh] overflow-y-auto">
+                    <CardHeader className="border-b border-gray-200 dark:border-gray-800">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <Zap className="h-5 w-5 text-blue-500" />
+                            テキスト改善結果
+                          </CardTitle>
+                          <CardDescription className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            AIが改善したテキストを確認してください
+                          </CardDescription>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setShowImprovementModal(false)
+                            setImprovedTextResult(null)
+                          }}
+                          className="rounded-full h-8 w-8 p-0"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-6 space-y-6">
+                      {/* Original Text */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
+                          <label className="text-sm font-semibold text-gray-500 dark:text-gray-400">元のテキスト</label>
+                        </div>
+                        <div className="p-4 bg-gray-50 dark:bg-gray-950 rounded-lg border border-gray-200 dark:border-gray-800">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                            {manualTweetText}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Arrow */}
+                      <div className="flex justify-center">
+                        <div className="p-2 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 rounded-full border border-green-300/50 dark:border-green-700/50">
+                          <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        </div>
+                      </div>
+
+                      {/* Improved Text */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                          <label className="text-sm font-bold text-green-700 dark:text-green-400">✨ 改善されたテキスト</label>
+                          <div className="ml-auto px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded-full">
+                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                              自然さ: {improvedTextResult.naturalnessScore}/100
+                            </span>
+                          </div>
+                        </div>
+                        <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg border-2 border-green-200/50 dark:border-green-800/50">
+                          <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap leading-relaxed font-medium">
+                            {improvedTextResult.improvedText}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Improvements List */}
+                      {improvedTextResult.improvements.length > 0 && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold text-blue-700 dark:text-blue-300">改善点</label>
+                          <div className="p-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+                            <ul className="space-y-2">
+                              {improvedTextResult.improvements.map((improvement, idx) => (
+                                <li key={idx} className="flex items-start gap-2 text-sm text-blue-600 dark:text-blue-400">
+                                  <span className="text-green-500 font-bold mt-0.5">✓</span>
+                                  <span className="leading-relaxed">{improvement}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Explanation */}
+                      {improvedTextResult.explanation && (
+                        <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 rounded-lg border border-amber-200/50 dark:border-amber-800/50">
+                          <p className="text-xs text-amber-700 dark:text-amber-300 italic leading-relaxed">
+                            💡 {improvedTextResult.explanation}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex gap-2 pt-4 border-t border-gray-200 dark:border-gray-800">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowImprovementModal(false)
+                            setImprovedTextResult(null)
+                          }}
+                          className="flex-1 rounded-full"
+                        >
+                          キャンセル
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            navigator.clipboard.writeText(improvedTextResult.improvedText)
+                            showToast("改善されたテキストをコピーしました", "success")
+                          }}
+                          variant="outline"
+                          className="rounded-full"
+                        >
+                          <Copy className="mr-2 h-4 w-4" />
+                          コピー
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setManualTweetText(improvedTextResult.improvedText)
+                            setShowImprovementModal(false)
+                            setImprovedTextResult(null)
+                            showToast("改善されたテキストを適用しました", "success")
+                          }}
+                          className="flex-1 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
+                        >
+                          <CheckSquare className="mr-2 h-4 w-4" />
+                          適用する
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
 
               {/* Quoted Tweets Button - Moved to bottom as less frequently used */}
               <Card className="group relative border-2 border-purple-200/50 dark:border-purple-800/50 bg-gradient-to-br from-purple-50/50 to-pink-50/50 dark:from-purple-950/20 dark:to-pink-950/20 rounded-2xl hover:shadow-xl hover:shadow-purple-500/20 transition-all duration-300 overflow-hidden">

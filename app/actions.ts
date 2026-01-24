@@ -1,6 +1,6 @@
 "use server"
 
-import { generatePosts, PostDraft } from "@/lib/ai-generator"
+import { generatePosts, PostDraft, improveTweetText, ImprovedText } from "@/lib/ai-generator"
 import { createServerClient } from "@/lib/supabase"
 import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place } from "@/lib/x-post"
 import { generateEyeCatchImage, generateImageVariations, downloadImageAsBuffer, GeneratedImage } from "@/lib/image-generator"
@@ -1810,6 +1810,36 @@ export interface SyntaxFormat {
 /**
  * 構文ボタン用: テキストをインプレッション最大化フォーマットに変換
  */
+/**
+ * 手動で入力したツイートテキストを改善・成形する
+ */
+export async function improveTweetTextAction(
+  text: string,
+  purpose?: string,
+  aiProvider?: 'grok' | 'claude'
+): Promise<ImprovedText | null> {
+  try {
+    if (!text.trim()) {
+      throw new Error('テキストが空です')
+    }
+
+    const result = await improveTweetText({
+      originalText: text,
+      purpose,
+      aiProvider: aiProvider || 'grok'
+    })
+
+    return result
+  } catch (error) {
+    console.error('Error improving tweet text:', error)
+    const appError = classifyError(error as Error)
+    logErrorToSentry(appError, {
+      action: 'improveTweetTextAction',
+    })
+    return null
+  }
+}
+
 export async function generateSyntaxFormat(
   text: string,
   purpose?: string

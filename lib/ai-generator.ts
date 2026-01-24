@@ -452,3 +452,234 @@ async function generateWithGrok(
     throw appError
   })
 }
+
+export interface ImprovedText {
+  improvedText: string
+  improvements: string[]
+  naturalnessScore: number
+  explanation: string
+}
+
+export interface ImproveTextParams {
+  originalText: string
+  purpose?: string
+  aiProvider?: 'grok' | 'claude'
+}
+
+/**
+ * 手動で入力したツイートテキストを改善・成形する
+ */
+export async function improveTweetText({
+  originalText,
+  purpose,
+  aiProvider = 'grok'
+}: ImproveTextParams): Promise<ImprovedText> {
+  try {
+    if (aiProvider === 'claude') {
+      try {
+        getAnthropicApiKey()
+        return await improveWithClaude(originalText, purpose)
+      } catch {
+        console.log('[AI Generator] Claude API key not found, falling back to Grok')
+        return await improveWithGrok(originalText, purpose)
+      }
+    } else {
+      try {
+        getGrokApiKey()
+        return await improveWithGrok(originalText, purpose)
+      } catch {
+        console.log('[AI Generator] Grok API key not found, falling back to Claude')
+        try {
+          getAnthropicApiKey()
+          return await improveWithClaude(originalText, purpose)
+        } catch {
+          throw new Error('No AI API key configured. Please set GROK_API_KEY (recommended) or ANTHROPIC_API_KEY in Vercel environment variables.')
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error improving tweet text:', error)
+    if (error instanceof Error) {
+      throw new Error(`Failed to improve tweet text: ${error.message}`)
+    }
+    throw new Error('Failed to improve tweet text. Please try again.')
+  }
+}
+
+async function improveWithClaude(originalText: string, purpose?: string): Promise<ImprovedText> {
+  const prompt = `以下のツイートテキストを改善・成形してください。
+
+【元のテキスト】
+${originalText}
+
+${purpose ? `【投稿目的】\n${purpose}\n` : ''}
+
+【改善要件】
+1. **読みやすさの向上**: 適切な改行、箇条書き、構造化
+2. **エンゲージメント向上**: 質問、呼びかけ、共感を誘う表現を追加
+3. **視覚的インパクト**: 冒頭の引き、絵文字の戦略的使用（3-5個程度）
+4. **自然さの確保**: スパム臭を避け、自然で読みやすい表現に
+5. **文字数最適化**: 280文字以内に収めつつ、情報量を保持
+
+【出力形式（JSON）】:
+{
+  "improvedText": "改善された投稿テキスト（280文字以内）",
+  "improvements": ["改善点1", "改善点2", "改善点3"],
+  "naturalnessScore": 0-100の数値（スパムリスク評価、高いほど自然）,
+  "explanation": "改善内容の説明（50文字程度）"
+}
+
+【注意】
+- 元のテキストの意味や意図は必ず保持する
+- 過度な装飾や変更は避ける
+- 自然で読みやすい改善を心がける`
+
+  const anthropic = getAnthropicClient()
+  const modelNames = [
+    'claude-3-5-sonnet-20241022',
+    'claude-sonnet-4-5',
+  ]
+
+  let lastError: AppError | null = null
+
+  for (const modelName of modelNames) {
+    try {
+      console.log(`[Claude API] Improving text with model: ${modelName}`)
+      
+      await logApiKeyAccess('anthropic', undefined, undefined).catch(() => {})
+
+      const message = await anthropic.messages.create({
+        model: modelName,
+        max_tokens: 1000,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      })
+
+      const content = message.content[0]
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response type from Claude')
+      }
+
+      const jsonMatch = content.text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('No JSON found in Claude response')
+      }
+
+      const parsed = JSON.parse(jsonMatch[0])
+      
+      return {
+        improvedText: parsed.improvedText || originalText,
+        improvements: parsed.improvements || [],
+        naturalnessScore: parsed.naturalnessScore || 70,
+        explanation: parsed.explanation || 'テキストを改善しました'
+      }
+    } catch (error) {
+      const appError = classifyError(error)
+      lastError = appError
+      console.error(`[Claude API] Model ${modelName} failed:`, appError.message)
+      
+      if (modelName === modelNames[modelNames.length - 1]) {
+        break
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError
+  }
+  throw new Error('Claude API error: All models failed.')
+}
+
+async function improveWithGrok(originalText: string, purpose?: string): Promise<ImprovedText> {
+  const grokApiKey = getGrokApiKey()
+  
+  const prompt = `以下のツイートテキストを改善・成形してください。
+
+【元のテキスト】
+${originalText}
+
+${purpose ? `【投稿目的】\n${purpose}\n` : ''}
+
+【改善要件】
+1. **読みやすさの向上**: 適切な改行、箇条書き、構造化
+2. **エンゲージメント向上**: 質問、呼びかけ、共感を誘う表現を追加
+3. **視覚的インパクト**: 冒頭の引き、絵文字の戦略的使用（3-5個程度）
+4. **自然さの確保**: スパム臭を避け、自然で読みやすい表現に
+5. **文字数最適化**: 280文字以内に収めつつ、情報量を保持
+6. **Grokの強み**: 軽いユーモアや風刺的視点を適度に注入（過度にならないよう注意）
+
+【出力形式（JSON）】:
+{
+  "improvedText": "改善された投稿テキスト（280文字以内）",
+  "improvements": ["改善点1", "改善点2", "改善点3"],
+  "naturalnessScore": 0-100の数値（スパムリスク評価、高いほど自然）,
+  "explanation": "改善内容の説明（50文字程度）"
+}
+
+【注意】
+- 元のテキストの意味や意図は必ず保持する
+- 過度な装飾や変更は避ける
+- 自然で読みやすい改善を心がける`
+
+  await logApiKeyAccess('grok', undefined, undefined).catch(() => {})
+
+  const response = await retryWithBackoff(
+    async () => {
+      const OpenAI = (await import('openai')).default
+      const openai = new OpenAI({
+        apiKey: grokApiKey,
+        baseURL: 'https://api.x.ai/v1',
+      })
+
+      const completion = await openai.chat.completions.create({
+        model: 'grok-4.1-fast',
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      })
+
+      const content = completion.choices[0]?.message?.content
+      if (!content) {
+        throw new Error('Empty response from Grok')
+      }
+
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('No JSON found in Grok response')
+      }
+
+      const parsed = JSON.parse(jsonMatch[0])
+      
+      return {
+        improvedText: parsed.improvedText || originalText,
+        improvements: parsed.improvements || [],
+        naturalnessScore: parsed.naturalnessScore || 70,
+        explanation: parsed.explanation || 'テキストを改善しました'
+      }
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 1000,
+      maxDelay: 10000,
+      onRetry: (attempt, error) => {
+        console.log(`[Grok API] Retry attempt ${attempt}`)
+        logErrorToSentry(error, { action: 'improveWithGrok', attempt })
+      },
+    }
+  ).catch((error) => {
+    const appError = classifyError(error)
+    logErrorToSentry(appError, { action: 'improveWithGrok' })
+    throw appError
+  })
+
+  return response
+}
