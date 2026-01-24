@@ -3614,7 +3614,7 @@ function DashboardContent() {
                         </Button>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                           複数のXアカウントを連携できます<br />
-                          💡 追加時にTwitter側でアカウントを切り替えられます
+                          💡 追加時にTwitter側のログイン画面で別のアカウントでログインできます
                         </p>
                       </div>
                     </CardContent>

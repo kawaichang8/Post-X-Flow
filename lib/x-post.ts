@@ -31,15 +31,12 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
       }
     )
 
-    // Don't add force_login parameter - let Twitter handle account selection naturally
-    // When force_login is not set, Twitter will show account selection if user has multiple accounts
-    // or allow switching accounts during the OAuth flow
+    // Add force_login=true to force login screen, allowing users to select different accounts
+    // This is necessary for adding multiple accounts - without it, Twitter auto-selects the currently logged-in account
     const authUrl = new URL(url)
-    // Remove force_login if it exists (from previous implementations)
-    authUrl.searchParams.delete('force_login')
-    authUrl.searchParams.delete('prompt')
+    authUrl.searchParams.set('force_login', 'true')
 
-    console.log('[Twitter OAuth] Auth URL generated successfully (without force_login - allows account switching)')
+    console.log('[Twitter OAuth] Auth URL generated successfully (with force_login=true - allows account selection)')
     console.log('[Twitter OAuth] Final auth URL:', authUrl.toString())
     console.log('[Twitter OAuth] URL parameters:', Object.fromEntries(authUrl.searchParams))
     return { url: authUrl.toString(), codeVerifier, state }
