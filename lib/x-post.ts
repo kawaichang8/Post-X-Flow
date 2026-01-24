@@ -35,13 +35,16 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     // This ensures users can choose which Twitter account to connect, even if already logged in
     const authUrl = new URL(url)
     if (forceLogin) {
+      // force_login=true forces Twitter to show login screen, allowing account selection
       authUrl.searchParams.set('force_login', 'true')
-      // Also add prompt=select_account to ensure account selection screen is shown
-      authUrl.searchParams.set('prompt', 'select_account')
+      // Remove any existing prompt parameter and set it to select_account
+      authUrl.searchParams.delete('prompt')
+      // Note: Twitter OAuth 2.0 may not support prompt parameter, but force_login should work
     }
 
-    console.log('[Twitter OAuth] Auth URL generated successfully', forceLogin ? '(with force_login and prompt=select_account)' : '')
+    console.log('[Twitter OAuth] Auth URL generated successfully', forceLogin ? '(with force_login=true)' : '')
     console.log('[Twitter OAuth] Final auth URL:', authUrl.toString())
+    console.log('[Twitter OAuth] URL parameters:', Object.fromEntries(authUrl.searchParams))
     return { url: authUrl.toString(), codeVerifier, state }
   } catch (error) {
     console.error('[Twitter OAuth] Error generating auth URL:', error)

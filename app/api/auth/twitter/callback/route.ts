@@ -77,19 +77,38 @@ export async function GET(request: NextRequest) {
     let userInfo
     try {
       userInfo = await getTwitterUserInfo(accessToken)
-      console.log("[Twitter OAuth Callback] User info fetched:", userInfo.username)
+      console.log("[Twitter OAuth Callback] User info fetched:", {
+        id: userInfo?.id,
+        username: userInfo?.username,
+        name: userInfo?.name
+      })
     } catch (error) {
       console.error("[Twitter OAuth Callback] Error fetching user info:", error)
       // Continue anyway, we can update it later
       userInfo = null
     }
 
+    // Log all existing accounts for this user (for debugging)
+    const { data: allUserAccounts } = await supabaseAdmin
+      .from("user_twitter_tokens")
+      .select("id, twitter_user_id, username, account_name")
+      .eq("user_id", userId)
+    
+    console.log("[Twitter OAuth Callback] Existing accounts for user:", allUserAccounts?.map(acc => ({
+      id: acc.id,
+      twitter_user_id: acc.twitter_user_id,
+      username: acc.username,
+      account_name: acc.account_name
+    })))
+
     console.log("[Twitter OAuth Callback] Storing account in database...")
+    console.log("[Twitter OAuth Callback] Twitter user ID:", userInfo?.id)
+    console.log("[Twitter OAuth Callback] Twitter username:", userInfo?.username)
     
     // Check if this Twitter account is already linked to this user
     const { data: existingAccount, error: checkError } = await supabaseAdmin
       .from("user_twitter_tokens")
-      .select("id, is_default, username")
+      .select("id, is_default, username, twitter_user_id, account_name")
       .eq("user_id", userId)
       .eq("twitter_user_id", userInfo?.id || "")
       .maybeSingle()
@@ -97,6 +116,17 @@ export async function GET(request: NextRequest) {
     if (checkError && checkError.code !== 'PGRST116') {
       console.error("[Twitter OAuth Callback] Error checking existing account:", checkError)
       return NextResponse.redirect(`${baseUrl}/dashboard?error=storage_failed&details=${encodeURIComponent(checkError.message)}`)
+    }
+
+    if (existingAccount) {
+      console.log("[Twitter OAuth Callback] Found existing account:", {
+        id: existingAccount.id,
+        username: existingAccount.username,
+        twitter_user_id: existingAccount.twitter_user_id,
+        account_name: existingAccount.account_name
+      })
+    } else {
+      console.log("[Twitter OAuth Callback] No existing account found - this is a new account")
     }
 
     // Check if user has any accounts (to determine if this should be default)

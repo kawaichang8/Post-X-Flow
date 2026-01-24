@@ -6,14 +6,14 @@ import { supabase } from "@/lib/supabase"
 import { GenerateForm } from "@/components/GenerateForm"
 import { PostDraft as PostDraftComponent } from "@/components/PostDraft"
 import { PostDraft } from "@/lib/ai-generator"
-import { generatePostDrafts, approveAndPostTweet, approveAndPostTweetWithImage, savePostToHistory, scheduleTweet, getHighEngagementPosts, getPostHistory, getPostHistoryPaginated, getPostPerformanceStats, PostPerformanceStats, updateAllTweetEngagements, getScheduledTweets, updateScheduledTweet, deleteScheduledTweet, getQuotedTweets, saveQuotedTweet, deleteQuotedTweet, QuotedTweet, postQuotedTweet, getOptimalPostingTimes, OptimalPostingTime, getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, setDefaultTwitterAccount, deleteTwitterAccount, TwitterAccount, getImprovementSuggestions, ImprovementSuggestion, generateSyntaxFormat, improveTweetTextAction, updateDraft, deleteDraft, searchLocations } from "@/app/actions"
+import { generatePostDrafts, approveAndPostTweet, approveAndPostTweetWithImage, savePostToHistory, scheduleTweet, getHighEngagementPosts, getPostHistory, getPostHistoryPaginated, getPostPerformanceStats, PostPerformanceStats, updateAllTweetEngagements, getScheduledTweets, updateScheduledTweet, deleteScheduledTweet, getQuotedTweets, saveQuotedTweet, deleteQuotedTweet, QuotedTweet, postQuotedTweet, getOptimalPostingTimes, OptimalPostingTime, getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, setDefaultTwitterAccount, deleteTwitterAccount, TwitterAccount, getImprovementSuggestions, ImprovementSuggestion, improveTweetTextAction, updateDraft, deleteDraft, searchLocations } from "@/app/actions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { LogOut, History, TrendingUp, RefreshCw, Copy, Twitter, BarChart3, Calendar, FileText, Zap, Clock, Edit, Trash2, Settings, HelpCircle, Search, Filter, ArrowUpDown, List, CalendarDays, CheckSquare, Square, X, Plus, Bookmark, MessageSquare, Lightbulb, BookOpen, User, Code2, AlertTriangle, BarChart2, Layers, Image as ImageIcon, MapPin, Share2, Check } from "lucide-react"
+import { LogOut, History, TrendingUp, RefreshCw, Copy, Twitter, BarChart3, Calendar, FileText, Zap, Clock, Edit, Trash2, Settings, HelpCircle, Search, Filter, ArrowUpDown, List, CalendarDays, CheckSquare, Square, X, Plus, Bookmark, MessageSquare, Lightbulb, BookOpen, User, AlertTriangle, BarChart2, Layers, Image as ImageIcon, MapPin, Share2, Check } from "lucide-react"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { CalendarWithSchedules } from "@/components/CalendarWithSchedules"
 import { openTwitterCompose } from "@/lib/twitter-client"
@@ -138,7 +138,6 @@ function DashboardContent() {
   const [manualTweetText, setManualTweetText] = useState("")
   const [manualTweetImage, setManualTweetImage] = useState<string | null>(null)
   const [manualTweetGif, setManualTweetGif] = useState<File | null>(null)
-  const [isGeneratingSyntax, setIsGeneratingSyntax] = useState(false)
   const [isImprovingText, setIsImprovingText] = useState(false)
   const [improvedTextResult, setImprovedTextResult] = useState<{
     improvedText: string
@@ -290,12 +289,18 @@ function DashboardContent() {
           } = await supabase.auth.getSession()
           if (session) {
             const accounts = await getTwitterAccounts(session.user.id)
+            console.log("[Dashboard] Loaded accounts after OAuth:", accounts.map(acc => ({
+              id: acc.id,
+              username: acc.username,
+              account_name: acc.account_name,
+              twitter_user_id: acc.twitter_user_id
+            })))
             if (accounts.length > 0) {
               // 最新のアカウント（最後に追加されたもの）を選択
               const latestAccount = accounts[accounts.length - 1]
               setSelectedAccountId(latestAccount.id)
               setTwitterAccessToken(latestAccount.access_token || null)
-              showToast(`アカウント「${latestAccount.account_name || latestAccount.username}」を選択しました`, "success")
+              showToast(`アカウント「${latestAccount.account_name || latestAccount.username}」を追加しました`, "success")
             }
           }
         }
@@ -972,8 +977,10 @@ function DashboardContent() {
         return
       }
 
-      // Redirect to X OAuth
-      window.location.href = `/api/auth/twitter?userId=${userId}`
+      // Add timestamp to force new OAuth session (helps with account selection)
+      const timestamp = Date.now()
+      // Redirect to X OAuth with force_login=true (handled server-side)
+      window.location.href = `/api/auth/twitter?userId=${userId}&t=${timestamp}`
     } catch (error) {
       console.error("Error connecting to X:", error)
       const errorMessage = error instanceof Error ? error.message : "Twitter連携の開始に失敗しました"
@@ -1266,54 +1273,8 @@ function DashboardContent() {
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={async () => {
-                                      if (!manualTweetText.trim()) {
-                                        showToast("テキストを入力してからフォーマット整形してください", "warning")
-                                        return
-                                      }
-                                      setIsGeneratingSyntax(true)
-                                      try {
-                                        const format = await generateSyntaxFormat(manualTweetText, currentPurpose || undefined)
-                                        if (format) {
-                                          setManualTweetText(format.formattedText)
-                                          showToast("フォーマットを整形しました", "success")
-                                        } else {
-                                          showToast("フォーマット整形に失敗しました", "error")
-                                        }
-                                      } catch (error) {
-                                        console.error("Error generating syntax:", error)
-                                        showToast("フォーマット整形に失敗しました", "error")
-                                      } finally {
-                                        setIsGeneratingSyntax(false)
-                                      }
-                                    }}
-                                    disabled={isGeneratingSyntax || !manualTweetText.trim()}
-                                    className="rounded-full text-xs"
-                                  >
-                                    <Code2 className={cn("mr-1.5 h-3.5 w-3.5", isGeneratingSyntax && "animate-spin")} />
-                                    整形
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="text-xs max-w-[200px]">
-                                    テキストを見やすく整形します<br />
-                                    （リスト化、見出し追加、改行など）
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 px-1">
-                          💡 <strong>改善</strong>: 内容を向上 | <strong>整形</strong>: 見た目を整える
-                        </p>
                       </div>
                       <textarea
                         value={manualTweetText}
@@ -3509,13 +3470,21 @@ function DashboardContent() {
                     Xアカウントの管理（複数アカウント対応）
                   </p>
                 </div>
-                <Button
-                  onClick={handleConnectTwitter}
-                  className="rounded-full"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  {twitterConnected ? "アカウントを追加" : "X連携"}
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    onClick={handleConnectTwitter}
+                    className="rounded-full"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    {twitterConnected ? "アカウントを追加" : "X連携"}
+                  </Button>
+                  {twitterConnected && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                      💡 別のアカウントを追加する場合は、<br />
+                      Twitter側でログアウトしてから追加してください
+                    </p>
+                  )}
+                </div>
               </div>
               {twitterConnected && twitterAccounts.length > 0 ? (
                 <div className="space-y-4">
@@ -3653,6 +3622,10 @@ function DashboardContent() {
                         </Button>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                           複数のXアカウントを連携できます
+                        </p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 font-medium">
+                          💡 別のアカウントを追加する場合は、<br />
+                          Twitter側でログアウトしてから追加してください
                         </p>
                       </div>
                     </CardContent>
