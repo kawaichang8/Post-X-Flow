@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
-    // Use force_login=true to force login screen, allowing users to select different accounts
-    // This is necessary for adding multiple accounts
-    const { url, codeVerifier, state } = await getTwitterAuthUrl(true)
+    // Don't use force_login=true - let users switch accounts on X side before starting OAuth
+    // If user switches account on X before clicking, that account will be selected
+    const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
 
     console.log("[Twitter OAuth] Auth URL generated (with force_login=true), storing in database...")
     

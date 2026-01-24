@@ -979,60 +979,16 @@ function DashboardContent() {
 
       // Show instruction for adding different account
       if (twitterConnected && twitterAccounts.length > 0) {
-        // OAuth URLを取得
-        try {
-          const response = await fetch(`/api/auth/twitter/url?userId=${userId}`)
-          const data = await response.json()
-          
-          if (!response.ok || !data.url) {
-            throw new Error(data.error || "OAuth URLの取得に失敗しました")
-          }
-          
-          const oauthUrl = data.url
-          
-          // ユーザーに選択肢を提示
-          const choice = window.confirm(
-            "別のアカウントを追加します。\n\n" +
-            "【推奨】シークレットモード（プライベートブラウジング）で開くことをお勧めします。\n\n" +
-            "「OK」をクリックすると、認証URLをコピーします。\n" +
-            "その後、シークレットモードで新しいタブを開き、コピーしたURLを貼り付けてください。\n\n" +
-            "「キャンセル」をクリックすると、通常モードで開きます。"
-          )
-          
-          if (choice) {
-            // URLをクリップボードにコピー
-            await navigator.clipboard.writeText(oauthUrl)
-            showToast(
-              "認証URLをコピーしました！\n\n" +
-              "1. シークレットモード（プライベートブラウジング）で新しいタブを開く\n" +
-              "2. コピーしたURLをアドレスバーに貼り付けてEnter\n" +
-              "3. 別のアカウントでログイン",
-              "info",
-              10000
-            )
-            return
-          }
-        } catch (error) {
-          console.error("Error getting OAuth URL:", error)
-          // フォールバック: 通常のリダイレクト
-          const confirmed = window.confirm(
-            "別のアカウントを追加します。\n\n" +
-            "【重要】別のアカウントを追加するには：\n\n" +
-            "1. Twitter/Xの認証画面が表示されます\n" +
-            "2. 既にログインしているアカウントが表示される場合：\n" +
-            "   → Twitter/Xアプリまたはブラウザから一度ログアウトしてください\n" +
-            "   → または、シークレットモード（プライベートブラウジング）を使用してください\n\n" +
-            "3. 追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力\n\n" +
-            "続行しますか？"
-          )
-          if (!confirmed) return
-        }
+        const confirmed = window.confirm(
+          "別のアカウントを追加します。\n\n" +
+          "Xアカウントを切り替えたい場合は、X側でアカウントを切り替えてから「OK」をクリックしてください。\n\n" +
+          "続行しますか？"
+        )
+        if (!confirmed) return
       }
 
-      // Add timestamp to force new OAuth session (helps with account selection)
-      const timestamp = Date.now()
-      // Redirect to X OAuth with force_login=true (handled server-side)
-      window.location.href = `/api/auth/twitter?userId=${userId}&t=${timestamp}`
+      // Redirect to X OAuth (X側でアカウントを切り替えていればそのアカウントが選択される)
+      window.location.href = `/api/auth/twitter?userId=${userId}`
     } catch (error) {
       console.error("Error connecting to X:", error)
       const errorMessage = error instanceof Error ? error.message : "Twitter連携の開始に失敗しました"
@@ -3674,29 +3630,14 @@ function DashboardContent() {
                           <p>複数のXアカウントを連携できます</p>
                           <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
                             <p className="font-medium text-blue-700 dark:text-blue-300 mb-2">💡 別のアカウントを追加する方法：</p>
-                            <div className="space-y-2 text-blue-600 dark:text-blue-400 text-left">
-                              <div>
-                                <p className="font-semibold mb-1">【推奨】シークレットモードを使用：</p>
-                                <ol className="list-decimal list-inside space-y-0.5 ml-2">
-                                  <li>「アカウントを追加」ボタンをクリック</li>
-                                  <li>「シークレットモードで開く」を選択（推奨）</li>
-                                  <li>新しいウィンドウで別のアカウントでログイン</li>
-                                </ol>
-                              </div>
-                              <div className="pt-2 border-t border-blue-200 dark:border-blue-800">
-                                <p className="font-semibold mb-1">通常モードで開く場合：</p>
-                                <ol className="list-decimal list-inside space-y-0.5 ml-2">
-                                  <li>「アカウントを追加」ボタンをクリック</li>
-                                  <li>既にログインしているアカウントが表示される場合：</li>
-                                  <li className="ml-4 list-none">→ Twitter/Xアプリまたはブラウザから一度ログアウト</li>
-                                  <li className="ml-4 list-none">→ または、シークレットモード（プライベートブラウジング）を使用</li>
-                                  <li>追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力</li>
-                                </ol>
-                              </div>
-                            </div>
-                            <div className="mt-3 pt-2 border-t border-blue-200 dark:border-blue-800">
+                            <ol className="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400 text-left">
+                              <li>X側で追加したいアカウントに切り替える</li>
+                              <li>「アカウントを追加」ボタンをクリック</li>
+                              <li>認証画面で現在選択中のアカウントが表示されます</li>
+                            </ol>
+                            <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
                               <p className="text-xs text-blue-600 dark:text-blue-400">
-                                ⚠️ 注意: Twitter/Xの認証画面に「別のアカウントでログイン」オプションが表示されない場合があります。その場合は、シークレットモードを使用するか、Twitter/Xから一度ログアウトしてください。
+                                💡 ヒント: X側でアカウントを切り替えてから「アカウントを追加」をクリックすると、そのアカウントが選択されます。
                               </p>
                             </div>
                           </div>
