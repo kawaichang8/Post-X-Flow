@@ -977,6 +977,18 @@ function DashboardContent() {
         return
       }
 
+      // Show instruction for adding different account
+      if (twitterConnected && twitterAccounts.length > 0) {
+        const confirmed = window.confirm(
+          "別のアカウントを追加します。\n\n" +
+          "Twitter側のログイン画面で、追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力してください。\n\n" +
+          "既にログインしているアカウントが表示される場合は、\n" +
+          "「別のアカウントでログイン」または「アカウントを切り替える」をクリックしてください。\n\n" +
+          "続行しますか？"
+        )
+        if (!confirmed) return
+      }
+
       // Add timestamp to force new OAuth session (helps with account selection)
       const timestamp = Date.now()
       // Redirect to X OAuth with force_login=true (handled server-side)
@@ -3461,22 +3473,13 @@ function DashboardContent() {
           {/* Accounts View */}
           {showAccounts && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                    アカウント管理
-                  </h1>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Xアカウントの管理（複数アカウント対応）
-                  </p>
-                </div>
-                <Button
-                  onClick={handleConnectTwitter}
-                  className="rounded-full"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  {twitterConnected ? "アカウントを追加" : "X連携"}
-                </Button>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                  アカウント管理
+                </h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Xアカウントの管理（複数アカウント対応）
+                </p>
               </div>
               {twitterConnected && twitterAccounts.length > 0 ? (
                 <div className="space-y-4">
@@ -3612,10 +3615,17 @@ function DashboardContent() {
                           <Plus className="mr-2 h-4 w-4" />
                           アカウントを追加
                         </Button>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          複数のXアカウントを連携できます<br />
-                          💡 追加時にTwitter側のログイン画面で別のアカウントでログインできます
-                        </p>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 space-y-1">
+                          <p>複数のXアカウントを連携できます</p>
+                          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2 mt-2">
+                            <p className="font-medium text-blue-700 dark:text-blue-300 mb-1">💡 別のアカウントを追加する方法：</p>
+                            <ol className="list-decimal list-inside space-y-0.5 text-blue-600 dark:text-blue-400">
+                              <li>「アカウントを追加」ボタンをクリック</li>
+                              <li>Twitter側のログイン画面で、追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力</li>
+                              <li>既にログインしているアカウントが表示される場合は、「別のアカウントでログイン」をクリック</li>
+                            </ol>
+                          </div>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
