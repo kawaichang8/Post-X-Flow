@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
       .select("id, twitter_user_id, username, account_name")
       .eq("user_id", userId)
     
-    console.log("[Twitter OAuth Callback] Existing accounts for user:", allUserAccounts?.map(acc => ({
+    console.log("[Twitter OAuth Callback] Existing accounts for user:", allUserAccounts?.map((acc: { id: string; twitter_user_id: string | null; username: string | null; account_name: string | null }) => ({
       id: acc.id,
       twitter_user_id: acc.twitter_user_id,
       username: acc.username,
