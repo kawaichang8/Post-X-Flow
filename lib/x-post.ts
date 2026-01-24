@@ -36,9 +36,12 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     const authUrl = new URL(url)
     if (forceLogin) {
       authUrl.searchParams.set('force_login', 'true')
+      // Also add prompt=select_account to ensure account selection screen is shown
+      authUrl.searchParams.set('prompt', 'select_account')
     }
 
-    console.log('[Twitter OAuth] Auth URL generated successfully', forceLogin ? '(with force_login)' : '')
+    console.log('[Twitter OAuth] Auth URL generated successfully', forceLogin ? '(with force_login and prompt=select_account)' : '')
+    console.log('[Twitter OAuth] Final auth URL:', authUrl.toString())
     return { url: authUrl.toString(), codeVerifier, state }
   } catch (error) {
     console.error('[Twitter OAuth] Error generating auth URL:', error)

@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     // Check if this Twitter account is already linked to this user
     const { data: existingAccount, error: checkError } = await supabaseAdmin
       .from("user_twitter_tokens")
-      .select("id, is_default")
+      .select("id, is_default, username")
       .eq("user_id", userId)
       .eq("twitter_user_id", userInfo?.id || "")
       .maybeSingle()
@@ -108,10 +108,10 @@ export async function GET(request: NextRequest) {
     const isFirstAccount = !existingAccounts || existingAccounts.length === 0
     const isDefault = isFirstAccount || (existingAccount?.is_default === true)
 
-    // If updating existing account, preserve is_default status
+    // If updating existing account, preserve is_default status and update tokens
     let dbError
     if (existingAccount) {
-      console.log("[Twitter OAuth Callback] Updating existing account...")
+      console.log("[Twitter OAuth Callback] Updating existing account (refreshing tokens)...")
       const { error: updateError } = await supabaseAdmin
         .from("user_twitter_tokens")
         .update({
@@ -124,6 +124,9 @@ export async function GET(request: NextRequest) {
         })
         .eq("id", existingAccount.id)
       dbError = updateError
+      if (!dbError) {
+        console.log("[Twitter OAuth Callback] Existing account updated successfully")
+      }
     } else {
       console.log("[Twitter OAuth Callback] Inserting new account...")
       const { error: insertError } = await supabaseAdmin
@@ -141,6 +144,9 @@ export async function GET(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
       dbError = insertError
+      if (!dbError) {
+        console.log("[Twitter OAuth Callback] New account inserted successfully")
+      }
     }
 
     if (dbError) {

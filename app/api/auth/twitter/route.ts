@@ -16,9 +16,10 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
-    const { url, codeVerifier, state } = await getTwitterAuthUrl()
+    // Always use force_login=true to allow account selection for multiple accounts
+    const { url, codeVerifier, state } = await getTwitterAuthUrl(true)
 
-    console.log("[Twitter OAuth] Auth URL generated, storing in database...")
+    console.log("[Twitter OAuth] Auth URL generated (with force_login=true), storing in database...")
     
     // Store state, codeVerifier, and user ID in database (more reliable than cookies with ngrok)
     const supabaseAdmin = createServerClient()
