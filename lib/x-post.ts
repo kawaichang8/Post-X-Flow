@@ -1,14 +1,13 @@
+import 'server-only'
 import { TwitterApi } from 'twitter-api-v2'
+import { classifyError, retryWithBackoff, logErrorToSentry, ErrorType, AppError } from './error-handler'
+import { getTwitterClientId, getTwitterClientSecret } from './server-only'
 
 // OAuth 2.0 with PKCE flow
 export function getTwitterAuthClient() {
-  const clientId = process.env.TWITTER_CLIENT_ID!
-  const clientSecret = process.env.TWITTER_CLIENT_SECRET!
+  const clientId = getTwitterClientId()
+  const clientSecret = getTwitterClientSecret()
   const redirectUri = process.env.TWITTER_REDIRECT_URI || process.env.NEXT_PUBLIC_APP_URL + '/api/auth/twitter/callback'
-
-  if (!clientId || !clientSecret) {
-    throw new Error('Missing Twitter API credentials')
-  }
 
   return new TwitterApi({
     clientId,
@@ -20,7 +19,7 @@ export function getTwitterAuthClient() {
 export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ url: string; codeVerifier: string; state: string }> {
   try {
     const client = getTwitterAuthClient()
-    const redirectUri = process.env.TWITTER_REDIRECT_URI || process.env.NEXT_PUBLIC_APP_URL + '/api/auth/twitter/callback'
+    const redirectUri = process.env.TWITTER_REDIRECT_URI || (process.env.NEXT_PUBLIC_APP_URL || '') + '/api/auth/twitter/callback'
     
     console.log('[Twitter OAuth] Generating auth URL with redirect URI:', redirectUri)
     
@@ -54,7 +53,7 @@ export async function getTwitterAccessToken(
 ): Promise<{ accessToken: string; refreshToken: string }> {
   try {
     const client = getTwitterAuthClient()
-    const redirectUri = process.env.TWITTER_REDIRECT_URI || process.env.NEXT_PUBLIC_APP_URL + '/api/auth/twitter/callback'
+    const redirectUri = process.env.TWITTER_REDIRECT_URI || (process.env.NEXT_PUBLIC_APP_URL || '') + '/api/auth/twitter/callback'
     
     console.log('[Twitter OAuth] Exchanging code for access token...')
     
@@ -80,26 +79,37 @@ export async function getTwitterAccessToken(
 export async function refreshTwitterAccessToken(
   refreshToken: string
 ): Promise<{ accessToken: string; refreshToken: string }> {
-  try {
-    const client = getTwitterAuthClient()
-    
-    console.log('[Twitter OAuth] Refreshing access token...')
-    
-    const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await client.refreshOAuth2Token(refreshToken)
+  return retryWithBackoff(
+    async () => {
+      const client = getTwitterAuthClient()
+      
+      console.log('[Twitter OAuth] Refreshing access token...')
+      
+      const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await client.refreshOAuth2Token(refreshToken)
 
-    if (!newAccessToken) {
-      throw new Error('Failed to obtain new access token from Twitter')
-    }
+      if (!newAccessToken) {
+        throw new Error('Failed to obtain new access token from Twitter')
+      }
 
-    console.log('[Twitter OAuth] Access token refreshed successfully')
-    return { 
-      accessToken: newAccessToken, 
-      refreshToken: newRefreshToken || refreshToken // Use new refresh token if provided, otherwise keep old one
+      console.log('[Twitter OAuth] Access token refreshed successfully')
+      return { 
+        accessToken: newAccessToken, 
+        refreshToken: newRefreshToken || refreshToken // Use new refresh token if provided, otherwise keep old one
+      }
+    },
+    {
+      maxRetries: 2,
+      initialDelay: 2000,
+      onRetry: (attempt, error) => {
+        console.log(`[Twitter OAuth] Retry attempt ${attempt} for token refresh`)
+        logErrorToSentry(error, { action: 'refreshTwitterAccessToken', attempt })
+      },
     }
-  } catch (error) {
-    console.error('[Twitter OAuth] Error refreshing access token:', error)
-    throw error
-  }
+  ).catch((error) => {
+    const appError = classifyError(error)
+    logErrorToSentry(appError, { action: 'refreshTwitterAccessToken' })
+    throw appError
+  })
 }
 
 // Get Twitter user information
@@ -172,72 +182,74 @@ export async function postTweet(
   accessToken: string,
   options?: TweetOptions
 ): Promise<{ id: string; text: string }> {
-  const client = new TwitterApi(accessToken)
-  const rwClient = client.readWrite
+  return retryWithBackoff(
+    async () => {
+      const client = new TwitterApi(accessToken)
+      const rwClient = client.readWrite
 
-  try {
-    const tweetParams: any = {
-      text,
-    }
-
-    // Add quote tweet ID if provided
-    if (options?.quoteTweetId) {
-      tweetParams.quote_tweet_id = options.quoteTweetId
-    }
-
-    // Add reply to tweet ID for threads
-    if (options?.replyToTweetId) {
-      tweetParams.reply = {
-        in_reply_to_tweet_id: options.replyToTweetId,
+      const tweetParams: any = {
+        text,
       }
-    }
 
-    // Add media IDs if provided
-    if (options?.mediaIds && options.mediaIds.length > 0) {
-      tweetParams.media = {
-        media_ids: options.mediaIds,
+      // Add quote tweet ID if provided
+      if (options?.quoteTweetId) {
+        tweetParams.quote_tweet_id = options.quoteTweetId
       }
-    }
 
-    // Add poll if provided
-    if (options?.poll) {
-      tweetParams.poll = {
-        options: options.poll.options.map(opt => opt.label),
-        duration_minutes: options.poll.durationMinutes,
+      // Add reply to tweet ID for threads
+      if (options?.replyToTweetId) {
+        tweetParams.reply = {
+          in_reply_to_tweet_id: options.replyToTweetId,
+        }
       }
-    }
 
-    // Add location/place if provided
-    if (options?.placeId) {
-      tweetParams.geo = {
-        place_id: options.placeId,
+      // Add media IDs if provided
+      if (options?.mediaIds && options.mediaIds.length > 0) {
+        tweetParams.media = {
+          media_ids: options.mediaIds,
+        }
       }
-    }
 
-    const tweet = await rwClient.v2.tweet(tweetParams)
+      // Add poll if provided
+      if (options?.poll) {
+        tweetParams.poll = {
+          options: options.poll.options.map(opt => opt.label),
+          duration_minutes: options.poll.durationMinutes,
+        }
+      }
 
-    return {
-      id: tweet.data.id,
-      text: tweet.data.text,
+      // Add location/place if provided
+      if (options?.placeId) {
+        tweetParams.geo = {
+          place_id: options.placeId,
+        }
+      }
+
+      const tweet = await rwClient.v2.tweet(tweetParams)
+
+      if (!tweet.data) {
+        throw new Error('Tweet data is missing from response')
+      }
+
+      return {
+        id: tweet.data.id,
+        text: tweet.data.text || text,
+      }
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 1000,
+      maxDelay: 30000,
+      onRetry: (attempt, error) => {
+        console.log(`[X API] Retry attempt ${attempt} after error:`, error.type)
+        logErrorToSentry(error, { action: 'postTweet', attempt })
+      },
     }
-  } catch (error: any) {
-    console.error('Error posting tweet:', error)
-    
-    // Provide more detailed error messages
-    if (error?.code === 401) {
-      throw new Error('Twitter認証エラー: アクセストークンが無効または期限切れです。Twitter連携を再度行ってください。')
-    } else if (error?.code === 403) {
-      throw new Error('Twitter権限エラー: 投稿権限がありません。Twitter Developer Portalで権限を確認してください。')
-    } else if (error?.code === 429) {
-      throw new Error('Twitterレート制限: 投稿回数が上限に達しました。しばらく待ってから再試行してください。')
-    } else if (error?.data?.detail) {
-      throw new Error(`Twitter APIエラー: ${error.data.detail}`)
-    } else if (error?.message) {
-      throw new Error(`Twitter APIエラー: ${error.message}`)
-    }
-    
-    throw new Error('Failed to post tweet. Please check your permissions and try again.')
-  }
+  ).catch((error) => {
+    const appError = classifyError(error)
+    logErrorToSentry(appError, { action: 'postTweet', text: text.substring(0, 50) })
+    throw appError
+  })
 }
 
 // Get tweet engagement metrics (likes, retweets, replies, impressions, reach)

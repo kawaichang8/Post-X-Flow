@@ -48,7 +48,7 @@ export function PostDraft({ draft, index, onApprove, onSchedule, isPosting, sugg
     if (!confirmed) return
 
     if (!onApprove) {
-      // Fallback: Open Twitter compose window
+      // Fallback: Open X compose window
       openTwitterCompose(draft.text)
       return
     }
@@ -112,8 +112,18 @@ export function PostDraft({ draft, index, onApprove, onSchedule, isPosting, sugg
             </span>
           </div>
         </div>
-        {draft.naturalnessScore < 60 && (
-          <CardDescription className="flex items-center gap-2 text-amber-600">
+        {draft.scoreBreakdown && 'warnings' in draft.scoreBreakdown && draft.scoreBreakdown.warnings && draft.scoreBreakdown.warnings.length > 0 && (
+          <CardDescription className="space-y-1">
+            {draft.scoreBreakdown.warnings.map((warning: string, idx: number) => (
+              <div key={idx} className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span className="text-xs">{warning}</span>
+              </div>
+            ))}
+          </CardDescription>
+        )}
+        {(!draft.scoreBreakdown || !('warnings' in draft.scoreBreakdown) || !draft.scoreBreakdown.warnings || draft.scoreBreakdown.warnings.length === 0) && draft.naturalnessScore < 60 && (
+          <CardDescription className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
             <AlertCircle className="h-4 w-4" />
             スパムリスクが高い可能性があります。内容を確認してください。
           </CardDescription>
@@ -150,12 +160,12 @@ export function PostDraft({ draft, index, onApprove, onSchedule, isPosting, sugg
         </div>
       </CardContent>
       <CardFooter className="flex flex-col gap-2">
-        <div className="flex gap-2 w-full">
+        <div className="flex flex-col sm:flex-row gap-2 w-full">
           <Button
             variant="outline"
             size="sm"
             onClick={handleCopy}
-            className="flex-1"
+            className="flex-1 w-full sm:w-auto"
           >
             {copied ? (
               <>
@@ -173,7 +183,7 @@ export function PostDraft({ draft, index, onApprove, onSchedule, isPosting, sugg
             variant="outline"
             size="sm"
             onClick={() => setShowSchedule(!showSchedule)}
-            className="flex-1"
+            className="flex-1 w-full sm:w-auto"
           >
             <Calendar className="mr-2 h-4 w-4" />
             スケジュール

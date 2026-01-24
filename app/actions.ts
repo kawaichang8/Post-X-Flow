@@ -4,6 +4,7 @@ import { generatePosts, PostDraft } from "@/lib/ai-generator"
 import { createServerClient } from "@/lib/supabase"
 import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place } from "@/lib/x-post"
 import { generateEyeCatchImage, generateImageVariations, downloadImageAsBuffer, GeneratedImage } from "@/lib/image-generator"
+import { classifyError, logErrorToSentry, AppError, ErrorType } from "@/lib/error-handler"
 
 interface PostHistoryItem {
   id: string
@@ -29,10 +30,23 @@ interface PostHistoryItem {
 
 export async function generatePostDrafts(
   trend: string,
-  purpose: string
+  purpose: string,
+  options?: {
+    aiProvider?: 'grok' | 'claude'
+    enableHumor?: boolean
+    enableRealtimeKnowledge?: boolean
+    realtimeTrends?: string[]
+  }
 ): Promise<PostDraft[]> {
   try {
-    const drafts = await generatePosts({ trend, purpose })
+    const drafts = await generatePosts({ 
+      trend, 
+      purpose,
+      aiProvider: options?.aiProvider || 'grok', // デフォルト: Grok
+      enableHumor: options?.enableHumor || false,
+      enableRealtimeKnowledge: options?.enableRealtimeKnowledge || false,
+      realtimeTrends: options?.realtimeTrends || []
+    })
     return drafts
   } catch (error) {
     console.error("Error generating drafts:", error)
@@ -50,7 +64,7 @@ export async function savePostToHistory(
   try {
     // Use service role client to bypass RLS in Server Actions
     const supabaseAdmin = createServerClient()
-    const { error } = await supabaseAdmin.from("post_history").insert({
+    const { data, error } = await supabaseAdmin.from("post_history").insert({
       user_id: userId,
       text: draft.text,
       hashtags: draft.hashtags,
@@ -58,12 +72,33 @@ export async function savePostToHistory(
       trend: trend,
       purpose: purpose,
       status: status,
-    })
+    }).select().single()
 
-    if (error) throw error
-  } catch (error) {
-    console.error("Error saving post to history:", error)
-    throw error
+    if (error) {
+      const appError = classifyError(error)
+      logErrorToSentry(appError, {
+        action: 'savePostToHistory',
+        userId,
+        status,
+      })
+      
+      // DB接続エラーの場合は、エラーをスローしてクライアント側でローカルストレージに保存
+      if (appError.type === ErrorType.DATABASE_ERROR) {
+        throw appError
+      }
+      
+      throw appError
+    }
+
+    return data
+  } catch (error: any) {
+    const appError = (error?.type && error?.message) ? error as AppError : classifyError(error)
+    logErrorToSentry(appError, {
+      action: 'savePostToHistory',
+      userId,
+      status,
+    })
+    throw appError
   }
 }
 
@@ -74,7 +109,7 @@ export async function approveAndPostTweet(
   trend: string,
   purpose: string,
   twitterAccountId?: string
-): Promise<{ success: boolean; tweetId?: string; error?: string }> {
+): Promise<{ success: boolean; tweetId?: string; error?: string; retryable?: boolean; retryAfter?: number }> {
   try {
     // Try to post to Twitter
     let tweet
@@ -83,59 +118,110 @@ export async function approveAndPostTweet(
     try {
       tweet = await postTweet(draft.text, currentAccessToken, {})
     } catch (error: any) {
+      const appError = classifyError(error)
+      
       // If 401 error, try to refresh token
-      if (error?.code === 401) {
+      if (appError.type === ErrorType.AUTH_ERROR && appError.statusCode === 401) {
         console.log("[Post Tweet] Access token expired, attempting to refresh...")
         
-        // Get refresh token from database for the specific account
-        const supabaseAdmin = createServerClient()
-        let query = supabaseAdmin
-          .from("user_twitter_tokens")
-          .select("refresh_token")
-          .eq("user_id", userId)
-        
-        // If twitterAccountId is provided, use it to get the specific account's token
-        if (twitterAccountId) {
-          query = query.eq("id", twitterAccountId)
-        }
-        
-        const { data: tokenData, error: tokenError } = await query.single()
+        try {
+          // Get refresh token from database for the specific account
+          const supabaseAdmin = createServerClient()
+          let query = supabaseAdmin
+            .from("user_twitter_tokens")
+            .select("refresh_token")
+            .eq("user_id", userId)
+          
+          // If twitterAccountId is provided, use it to get the specific account's token
+          if (twitterAccountId) {
+            query = query.eq("id", twitterAccountId)
+          }
+          
+          const { data: tokenData, error: tokenError } = await query.single()
 
-        if (tokenError || !tokenData?.refresh_token) {
-          throw new Error('Twitter認証エラー: リフレッシュトークンが見つかりません。Twitter連携を再度行ってください。')
-        }
+          if (tokenError || !tokenData?.refresh_token) {
+            const dbError = classifyError(tokenError || new Error('Refresh token not found'))
+            logErrorToSentry(dbError, {
+              action: 'approveAndPostTweet',
+              step: 'get_refresh_token',
+              userId,
+              twitterAccountId,
+            })
+            return {
+              success: false,
+              error: 'Twitter認証エラー: リフレッシュトークンが見つかりません。Twitter連携を再度行ってください。',
+              retryable: false,
+            }
+          }
 
-        // Refresh access token
-        const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await refreshTwitterAccessToken(tokenData.refresh_token)
+          // Refresh access token
+          const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await refreshTwitterAccessToken(tokenData.refresh_token)
 
-        // Update tokens in database for the specific account
-        let updateQuery = supabaseAdmin
-          .from("user_twitter_tokens")
-          .update({
-            access_token: newAccessToken,
-            refresh_token: newRefreshToken,
-            updated_at: new Date().toISOString(),
+          // Update tokens in database for the specific account
+          let updateQuery = supabaseAdmin
+            .from("user_twitter_tokens")
+            .update({
+              access_token: newAccessToken,
+              refresh_token: newRefreshToken,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", userId)
+          
+          // If twitterAccountId is provided, update only that account
+          if (twitterAccountId) {
+            updateQuery = updateQuery.eq("id", twitterAccountId)
+          }
+          
+          const { error: updateError } = await updateQuery
+
+          if (updateError) {
+            const updateAppError = classifyError(updateError)
+            logErrorToSentry(updateAppError, {
+              action: 'approveAndPostTweet',
+              step: 'update_tokens',
+              userId,
+              twitterAccountId,
+            })
+            return {
+              success: false,
+              error: 'トークンの更新に失敗しました。Twitter連携を再度行ってください。',
+              retryable: false,
+            }
+          }
+
+          console.log("[Post Tweet] Token refreshed, retrying post...")
+          // Retry with new access token
+          currentAccessToken = newAccessToken
+          tweet = await postTweet(draft.text, currentAccessToken, {})
+        } catch (refreshError) {
+          const refreshAppError = classifyError(refreshError)
+          logErrorToSentry(refreshAppError, {
+            action: 'approveAndPostTweet',
+            step: 'refresh_token',
+            userId,
+            twitterAccountId,
           })
-          .eq("user_id", userId)
-        
-        // If twitterAccountId is provided, update only that account
-        if (twitterAccountId) {
-          updateQuery = updateQuery.eq("id", twitterAccountId)
+          return {
+            success: false,
+            error: refreshAppError.message,
+            retryable: refreshAppError.retryable,
+            retryAfter: refreshAppError.retryAfter,
+          }
         }
-        
-        const { error: updateError } = await updateQuery
-
-        if (updateError) {
-          console.error("[Post Tweet] Error updating refreshed tokens:", updateError)
-          throw new Error('トークンの更新に失敗しました。Twitter連携を再度行ってください。')
-        }
-
-        console.log("[Post Tweet] Token refreshed, retrying post...")
-        // Retry with new access token
-        currentAccessToken = newAccessToken
-        tweet = await postTweet(draft.text, currentAccessToken, {})
       } else {
-        throw error
+        // レート制限やその他のエラー
+        logErrorToSentry(appError, {
+          action: 'approveAndPostTweet',
+          step: 'post_tweet',
+          userId,
+          twitterAccountId,
+        })
+        return {
+          success: false,
+          error: appError.message,
+          retryable: appError.retryable,
+          retryAfter: appError.retryAfter,
+        }
       }
     }
 
@@ -167,36 +253,76 @@ export async function approveAndPostTweet(
     }
 
     // Save to history using service role client
-    const supabaseAdmin = createServerClient()
-    const { error } = await supabaseAdmin.from("post_history").insert({
-      user_id: userId,
-      twitter_account_id: twitterAccountId || null,
-      text: draft.text,
-      hashtags: draft.hashtags,
-      naturalness_score: draft.naturalnessScore,
-      trend: trend,
-      purpose: purpose,
-      status: "posted",
-      tweet_id: tweet.id,
-      engagement_score: engagementScore,
-      impression_count: impressionCount,
-      reach_count: reachCount,
-      engagement_rate: engagementRate,
-      like_count: likeCount,
-      retweet_count: retweetCount,
-      reply_count: replyCount,
-      quote_count: quoteCount,
+    try {
+      const supabaseAdmin = createServerClient()
+      const { error } = await supabaseAdmin.from("post_history").insert({
+        user_id: userId,
+        twitter_account_id: twitterAccountId || null,
+        text: draft.text,
+        hashtags: draft.hashtags,
+        naturalness_score: draft.naturalnessScore,
+        trend: trend,
+        purpose: purpose,
+        status: "posted",
+        tweet_id: tweet.id,
+        engagement_score: engagementScore,
+        impression_count: impressionCount,
+        reach_count: reachCount,
+        engagement_rate: engagementRate,
+        like_count: likeCount,
+        retweet_count: retweetCount,
+        reply_count: replyCount,
+        quote_count: quoteCount,
+      })
+
+      if (error) {
+        const dbError = classifyError(error)
+        logErrorToSentry(dbError, {
+          action: 'approveAndPostTweet',
+          step: 'save_to_history',
+          userId,
+          twitterAccountId,
+        })
+        // DBエラーでも投稿は成功しているので、警告のみ
+        console.warn("[Post Tweet] Failed to save to history:", dbError.message)
+      }
+    } catch (dbError) {
+      const appError = classifyError(dbError)
+      logErrorToSentry(appError, {
+        action: 'approveAndPostTweet',
+        step: 'save_to_history',
+        userId,
+        twitterAccountId,
+      })
+      // DBエラーでも投稿は成功しているので、警告のみ
+      console.warn("[Post Tweet] Failed to save to history:", appError.message)
+    }
+
+    return { success: true, tweetId: tweet.id, retryable: false }
+  } catch (error: any) {
+    const appError = (error?.type && error?.message) ? error as AppError : classifyError(error)
+    logErrorToSentry(appError, {
+      action: 'approveAndPostTweet',
+      step: 'unknown',
+      userId,
+      twitterAccountId,
     })
-
-    if (error) throw error
-
-    return { success: true, tweetId: tweet.id }
-  } catch (error) {
-    console.error("Error posting tweet:", error)
-    const errorMessage = error instanceof Error ? error.message : "投稿に失敗しました"
-    return { 
-      success: false, 
-      error: errorMessage 
+    
+    // エラーが既にAppError形式で返されている場合はそのまま返す
+    if (error?.type && error?.message) {
+      return {
+        success: false,
+        error: appError.message,
+        retryable: appError.retryable,
+        retryAfter: appError.retryAfter,
+      }
+    }
+    
+    return {
+      success: false,
+      error: appError.message,
+      retryable: appError.retryable,
+      retryAfter: appError.retryAfter,
     }
   }
 }
@@ -210,7 +336,7 @@ export async function approveAndPostTweetWithImage(
   purpose: string,
   imageUrl?: string,
   twitterAccountId?: string
-): Promise<{ success: boolean; tweetId?: string; error?: string }> {
+): Promise<{ success: boolean; tweetId?: string; error?: string; retryable?: boolean; retryAfter?: number }> {
   try {
     const { postTweet, getTweetEngagement, refreshTwitterAccessToken, uploadMedia } = await import("@/lib/x-post")
     const { downloadImageAsBuffer } = await import("@/lib/image-generator")
@@ -354,8 +480,8 @@ export async function approveAndPostTweetWithImage(
 
     if (error) throw error
 
-    return { success: true, tweetId: tweet.id }
-  } catch (error) {
+    return { success: true, tweetId: tweet.id, retryable: false }
+  } catch (error: any) {
     console.error("Error posting tweet with image:", error)
     const errorMessage = error instanceof Error ? error.message : "投稿に失敗しました"
     return { 
@@ -639,7 +765,27 @@ export async function getHighEngagementPosts(userId: string) {
   }
 }
 
-export async function getPostHistory(userId: string, limit: number = 50, accountId?: string) {
+export interface PaginationParams {
+  page?: number
+  pageSize?: number
+  offset?: number
+}
+
+export interface PaginatedResult<T> {
+  data: T[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  hasMore: boolean
+}
+
+export async function getPostHistory(
+  userId: string, 
+  limit: number = 50, 
+  accountId?: string,
+  pagination?: PaginationParams
+): Promise<PostHistoryItem[]> {
   try {
     // Use service role client to bypass RLS in Server Actions
     const supabaseAdmin = createServerClient()
@@ -652,7 +798,7 @@ export async function getPostHistory(userId: string, limit: number = 50, account
           display_name,
           account_name
         )
-      `)
+      `, { count: pagination ? 'exact' : undefined })
       .eq("user_id", userId)
     
     // Filter by account if specified
@@ -660,9 +806,18 @@ export async function getPostHistory(userId: string, limit: number = 50, account
       query = query.eq("twitter_account_id", accountId)
     }
     
-    const { data, error } = await query
+    // Apply pagination
+    if (pagination) {
+      const page = pagination.page || 1
+      const pageSize = pagination.pageSize || limit
+      const offset = pagination.offset ?? (page - 1) * pageSize
+      query = query.range(offset, offset + pageSize - 1)
+    } else {
+      query = query.limit(limit)
+    }
+    
+    const { data, error, count } = await query
       .order("created_at", { ascending: false })
-      .limit(limit)
 
     if (error) throw error
 
@@ -674,6 +829,78 @@ export async function getPostHistory(userId: string, limit: number = 50, account
   } catch (error) {
     console.error("Error fetching post history:", error)
     return []
+  }
+}
+
+/**
+ * Get paginated post history with total count
+ */
+export async function getPostHistoryPaginated(
+  userId: string,
+  options: {
+    page?: number
+    pageSize?: number
+    accountId?: string
+    status?: string
+    searchQuery?: string
+  } = {}
+): Promise<PaginatedResult<PostHistoryItem>> {
+  try {
+    const { page = 1, pageSize = 20, accountId, status, searchQuery } = options
+    const supabaseAdmin = createServerClient()
+    
+    let query = supabaseAdmin
+      .from("post_history")
+      .select(`
+        *,
+        twitter_account:user_twitter_tokens!post_history_twitter_account_id_fkey(
+          username,
+          display_name,
+          account_name
+        )
+      `, { count: 'exact' })
+      .eq("user_id", userId)
+    
+    // Apply filters
+    if (accountId) {
+      query = query.eq("twitter_account_id", accountId)
+    }
+    if (status && status !== 'all') {
+      query = query.eq("status", status)
+    }
+    if (searchQuery) {
+      query = query.or(`text.ilike.%${searchQuery}%,hashtags.cs.{${searchQuery}}`)
+    }
+    
+    // Apply pagination
+    const offset = (page - 1) * pageSize
+    const { data, error, count } = await query
+      .order("created_at", { ascending: false })
+      .range(offset, offset + pageSize - 1)
+
+    if (error) throw error
+
+    const total = count || 0
+    const totalPages = Math.ceil(total / pageSize)
+
+    return {
+      data: (data || []).map((item: any) => ({
+        ...item,
+        twitter_account: item.twitter_account ? {
+          username: item.twitter_account.username,
+          display_name: item.twitter_account.display_name,
+          account_name: item.twitter_account.account_name,
+        } : null,
+      })) as PostHistoryItem[],
+      total,
+      page,
+      pageSize,
+      totalPages,
+      hasMore: page < totalPages,
+    }
+  } catch (error) {
+    console.error("Error fetching paginated post history:", error)
+    throw error
   }
 }
 
@@ -1100,7 +1327,7 @@ export async function postQuotedTweet(
   text: string,
   accessToken: string,
   quoteTweetId: string | null
-): Promise<{ success: boolean; tweetId?: string; error?: string }> {
+): Promise<{ success: boolean; tweetId?: string; error?: string; retryable?: boolean; retryAfter?: number }> {
   try {
     const { postTweet, refreshTwitterAccessToken } = await import("@/lib/x-post")
     
@@ -1203,8 +1430,8 @@ export async function postQuotedTweet(
 
     if (error) throw error
 
-    return { success: true, tweetId: tweet.id }
-  } catch (error) {
+    return { success: true, tweetId: tweet.id, retryable: false }
+  } catch (error: any) {
     console.error("Error posting quoted tweet:", error)
     const errorMessage = error instanceof Error ? error.message : "投稿に失敗しました"
     return { 

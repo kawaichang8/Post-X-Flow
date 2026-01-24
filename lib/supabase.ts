@@ -58,9 +58,14 @@ export const supabase = getSupabaseClient()
 
 // Server-side client for admin operations
 export function createServerClient() {
+  // This function should only be called from server-side code
+  if (typeof window !== 'undefined') {
+    throw new Error('createServerClient can only be called from server-side code')
+  }
+  
   const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
   if (!serviceRoleKey) {
-    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY')
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY. Please configure it in Vercel environment variables.')
   }
   const { supabaseUrl } = getSupabaseConfig()
   return createClient(supabaseUrl, serviceRoleKey, {

@@ -25,7 +25,7 @@ export function TweetPreview({ text, imageUrl, quotedTweet, className }: TweetPr
   return (
     <div className={cn("w-full", className)}>
       <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl overflow-hidden">
-        {/* Twitter-like Tweet Preview */}
+        {/* X-like Tweet Preview */}
         <div className="p-4 space-y-3">
           {/* User Info */}
           <div className="flex items-center gap-3">
@@ -44,7 +44,7 @@ export function TweetPreview({ text, imageUrl, quotedTweet, className }: TweetPr
               </div>
             </div>
             
-            {/* Twitter Icon */}
+            {/* X Icon */}
             <div className="text-gray-400 dark:text-gray-600">
               <Twitter className="h-5 w-5" />
             </div>

@@ -1,21 +1,41 @@
+import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
+import { classifyError, retryWithBackoff, logErrorToSentry, AppError } from './error-handler'
+import { getAnthropicApiKey, getGrokApiKey } from './server-only'
+import { calculateNaturalnessScore, ScoreBreakdown } from './security/score-calculator'
+import { calculateAdvancedNaturalnessScore, AdvancedScoreBreakdown, ScoreConfig, DEFAULT_SCORE_CONFIG } from './security/score-calculator-advanced'
+import { logApiKeyAccess } from './security/audit-log'
 
 export interface PostDraft {
   text: string
   naturalnessScore: number
   hashtags: string[]
   formatType?: string // フォーマットタイプ（見出し型、質問型、リスト型など）
+  scoreBreakdown?: ScoreBreakdown | AdvancedScoreBreakdown // スコア計算の詳細（オプション）
 }
 
 export interface GeneratePostsParams {
   trend: string
   purpose: string
+  aiProvider?: 'grok' | 'claude' // デフォルト: 'grok'
+  enableHumor?: boolean // ユーモア注入オプション（Grok専用）
+  enableRealtimeKnowledge?: boolean // リアルタイム知識挿入（Grok専用）
+  realtimeTrends?: string[] // 最新トレンド情報（オプション）
+  scoreConfig?: Partial<ScoreConfig> // スコア計算設定（オプション）
 }
 
 // Claude API implementation
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+// API key is loaded securely via server-only module
+let anthropicInstance: Anthropic | null = null
+
+function getAnthropicClient(): Anthropic {
+  if (!anthropicInstance) {
+    anthropicInstance = new Anthropic({
+      apiKey: getAnthropicApiKey(),
+    })
+  }
+  return anthropicInstance
+}
 
 const PROMPT_TEMPLATE = `現在のトレンド参考: {trend}
 投稿目的: {purpose}
@@ -66,15 +86,41 @@ Xでインプレッション（表示回数）が最大化されるテキスト�
   ]
 }`
 
-export async function generatePosts({ trend, purpose }: GeneratePostsParams): Promise<PostDraft[]> {
+export async function generatePosts({ 
+  trend, 
+  purpose, 
+  aiProvider = 'grok', // デフォルトをGrokに変更
+  enableHumor = false,
+  enableRealtimeKnowledge = false,
+  realtimeTrends = [],
+  scoreConfig
+}: GeneratePostsParams): Promise<PostDraft[]> {
   try {
-    // Use Claude API if available, otherwise fallback to Grok
-    if (process.env.ANTHROPIC_API_KEY) {
-      return await generateWithClaude(trend, purpose)
-    } else if (process.env.GROK_API_KEY) {
-      return await generateWithGrok(trend, purpose)
+    // Grokをデフォルトに、明示的にClaudeが指定された場合のみClaudeを使用
+    if (aiProvider === 'claude') {
+      try {
+        getAnthropicApiKey() // Check if key exists
+        return await generateWithClaude(trend, purpose, scoreConfig)
+      } catch {
+        // Claude APIキーがない場合はGrokにフォールバック
+        console.log('[AI Generator] Claude API key not found, falling back to Grok')
+        return await generateWithGrok(trend, purpose, enableHumor, enableRealtimeKnowledge, realtimeTrends, scoreConfig)
+      }
     } else {
-      throw new Error('No AI API key configured. Please set ANTHROPIC_API_KEY or GROK_API_KEY')
+      // デフォルト: Grok
+      try {
+        getGrokApiKey() // Check if key exists
+        return await generateWithGrok(trend, purpose, enableHumor, enableRealtimeKnowledge, realtimeTrends, scoreConfig)
+      } catch {
+        // Grok APIキーがない場合はClaudeにフォールバック
+        console.log('[AI Generator] Grok API key not found, falling back to Claude')
+        try {
+          getAnthropicApiKey()
+          return await generateWithClaude(trend, purpose, scoreConfig)
+        } catch {
+          throw new Error('No AI API key configured. Please set GROK_API_KEY (recommended) or ANTHROPIC_API_KEY in Vercel environment variables.')
+        }
+      }
     }
   } catch (error) {
     console.error('Error generating posts:', error)
@@ -86,7 +132,7 @@ export async function generatePosts({ trend, purpose }: GeneratePostsParams): Pr
   }
 }
 
-async function generateWithClaude(trend: string, purpose: string): Promise<PostDraft[]> {
+async function generateWithClaude(trend: string, purpose: string, scoreConfig?: Partial<ScoreConfig>): Promise<PostDraft[]> {
   const prompt = PROMPT_TEMPLATE
     .replace('{trend}', trend)
     .replace('{purpose}', purpose)
@@ -98,21 +144,40 @@ async function generateWithClaude(trend: string, purpose: string): Promise<PostD
     'claude-3-opus-20240229',     // Fallback to Opus
   ]
 
-  let lastError: Error | null = null
+  let lastError: AppError | null = null
 
   for (const modelName of modelNames) {
     try {
       console.log(`[Claude API] Trying model: ${modelName}`)
-      const message = await anthropic.messages.create({
-        model: modelName,
-        max_tokens: 2000,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
+      
+      // 監査ログ: APIキーアクセスを記録
+      await logApiKeyAccess('anthropic', undefined, undefined).catch(() => {
+        // ログ記録失敗は無視（アプリケーションの動作を妨げない）
       })
+      
+      const message = await retryWithBackoff(
+        async () => {
+          return await getAnthropicClient().messages.create({
+            model: modelName,
+            max_tokens: 2000,
+            messages: [
+              {
+                role: 'user',
+                content: prompt
+              }
+            ]
+          })
+        },
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 10000,
+          onRetry: (attempt, error) => {
+            console.log(`[Claude API] Retry attempt ${attempt} for model ${modelName}`)
+            logErrorToSentry(error, { action: 'generateWithClaude', model: modelName, attempt })
+          },
+        }
+      )
 
       const content = message.content[0]
       if (content.type !== 'text') {
@@ -132,77 +197,256 @@ async function generateWithClaude(trend: string, purpose: string): Promise<PostD
       }
 
       console.log(`[Claude API] Successfully generated posts with model: ${modelName}`)
-      return parsed.drafts.map((draft: any) => ({
-        text: draft.text || '',
-        naturalnessScore: draft.naturalnessScore || 0,
-        hashtags: draft.hashtags || [],
-        formatType: draft.formatType || undefined // フォーマットタイプ（オプショナル）
-      }))
+      
+      // 高度化されたスコア計算を適用（設定がある場合）
+      const draftPromises = parsed.drafts.map(async (draft: any) => {
+        const aiScore = draft.naturalnessScore || 0
+        
+        // 高度化設定がある場合は高度化版を使用
+        if (scoreConfig) {
+          const advancedBreakdown = await calculateAdvancedNaturalnessScore(
+            draft.text || '',
+            draft.hashtags || [],
+            scoreConfig,
+            [aiScore]
+          )
+          
+          return {
+            text: draft.text || '',
+            naturalnessScore: advancedBreakdown.factors.totalScore,
+            hashtags: draft.hashtags || [],
+            formatType: draft.formatType || undefined,
+            scoreBreakdown: advancedBreakdown,
+          }
+        }
+        
+        // デフォルトのスコア計算
+        const scoreBreakdown = calculateNaturalnessScore(
+          draft.text || '',
+          draft.hashtags || [],
+          aiScore
+        )
+        
+        return {
+          text: draft.text || '',
+          naturalnessScore: scoreBreakdown.factors.totalScore,
+          hashtags: draft.hashtags || [],
+          formatType: draft.formatType || undefined,
+          scoreBreakdown: scoreBreakdown,
+        }
+      })
+      
+      return await Promise.all(draftPromises)
     } catch (error) {
       console.error(`[Claude API] Error with model ${modelName}:`, error)
-      lastError = error instanceof Error ? error : new Error(String(error))
+      const appError = classifyError(error)
+      lastError = appError
+      logErrorToSentry(appError, { action: 'generateWithClaude', model: modelName })
       // Continue to next model
       continue
     }
   }
 
   // If all models failed, throw the last error
-  throw new Error(`Claude API error: All models failed. Last error: ${lastError?.message || 'Unknown error'}`)
+  if (lastError) {
+    throw lastError
+  }
+  throw new Error('Claude API error: All models failed. Unknown error.')
 }
 
-async function generateWithGrok(trend: string, purpose: string): Promise<PostDraft[]> {
-  // Grok API implementation (placeholder - adjust based on actual Grok API)
-  const grokApiKey = process.env.GROK_API_KEY!
-  const prompt = PROMPT_TEMPLATE
+// Grok専用プロンプトテンプレート（ユーモア・リアルタイム知識対応）
+const GROK_PROMPT_TEMPLATE = `現在のトレンド参考: {trend}
+投稿目的: {purpose}
+{realtimeKnowledge}
+
+Xでインプレッション（表示回数）が最大化されるテキストフォーマットで、3案の投稿を生成してください。
+
+【Grokの強みを活かす要件】
+{humorRequirement}
+{realtimeRequirement}
+
+【インプレッション最大化のフォーマット要件】
+1. **冒頭の引き（最初の10-15文字）**: 数字、絵文字、質問、驚きの事実などで即座に注意を引く
+   - 例: "🔥 3つの方法で..." / "知ってた？" / "実は..." / "【重要】"
+
+2. **構造化された内容**: 読みやすさと視認性を最大化
+   - 箇条書き（・、✓、→など）を効果的に使用
+   - 見出し形式（【】、数字付きリストなど）
+   - 適度な改行で視認性向上
+
+3. **絵文字の戦略的使用**: 視覚的なインパクトと感情的なつながり
+   - 冒頭に1-2個の関連絵文字
+   - 箇条書きの各項目に適切な絵文字
+   - 過度な使用は避ける（3-5個程度）
+
+4. **エンゲージメント誘発**: コメントやリツイートを促す
+   - 質問形式の活用
+   - "どう思う？" / "あなたは？" / "シェアして" などの呼びかけ
+   - 読者の共感や意見を求める表現
+
+5. **価値提供**: 読者にとって有益な情報を含める
+   - 具体的な数字や事実
+   - 実用的なアドバイスやヒント
+   - トレンドとの自然な関連付け
+
+【基本要件】
+- トーン: フレンドリー、正直、押し売り感ゼロ
+- 誘導文: 控えめ（例: 「速くメモ取るならMF MemoFlow試してみて」）
+- ハッシュタグ: 3-5個以内に自然に配置
+- スパム臭/煽りゼロ、自然さ最優先
+- 各投稿は280文字以内
+- 各案は異なるフォーマットアプローチを使用（見出し型、質問型、リスト型など）
+
+【出力形式（JSON）】:
+{
+  "drafts": [
+    {
+      "text": "投稿テキスト（ハッシュタグ含む、インプレッション最大化フォーマット）",
+      "naturalnessScore": 0-100の数値（スパムリスク評価、高いほど自然）,
+      "hashtags": ["ハッシュタグ1", "ハッシュタグ2", ...],
+      "formatType": "見出し型" | "質問型" | "リスト型" | "ストーリー型"
+    }
+  ]
+}`
+
+async function generateWithGrok(
+  trend: string, 
+  purpose: string,
+  enableHumor: boolean = false,
+  enableRealtimeKnowledge: boolean = false,
+  realtimeTrends: string[] = [],
+  scoreConfig?: Partial<ScoreConfig>
+): Promise<PostDraft[]> {
+  const grokApiKey = getGrokApiKey()
+  
+  // リアルタイム知識セクションを構築
+  let realtimeKnowledgeSection = ''
+  if (enableRealtimeKnowledge && realtimeTrends.length > 0) {
+    realtimeKnowledgeSection = `\n【最新トレンド情報（リアルタイム）】\n${realtimeTrends.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nこれらの最新トレンドを自然に反映させてください。`
+  }
+  
+  // ユーモア要件セクションを構築
+  const humorRequirement = enableHumor 
+    ? `- **ユーモア注入**: Grokの特徴的な風刺的視点や軽いユーモアを適度に注入（過度にならないよう注意）\n- **トーン**: 親しみやすく、時には軽い皮肉やウィットを含む（ただし攻撃的にならない）`
+    : ''
+  
+  // リアルタイム要件セクションを構築
+  const realtimeRequirement = enableRealtimeKnowledge
+    ? `- **最新知識の活用**: 上記の最新トレンド情報を活用し、時事性の高い内容を含める\n- **リアルタイム性**: 最新の情報や話題を自然に織り交ぜる`
+    : ''
+  
+  const prompt = GROK_PROMPT_TEMPLATE
     .replace('{trend}', trend)
     .replace('{purpose}', purpose)
+    .replace('{realtimeKnowledge}', realtimeKnowledgeSection)
+    .replace('{humorRequirement}', humorRequirement || '- **トーン**: フレンドリー、正直、押し売り感ゼロ')
+    .replace('{realtimeRequirement}', realtimeRequirement || '')
 
-  // Note: Adjust this based on actual Grok API endpoint and format
-  const response = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${grokApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'grok-beta',
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-    }),
+  // 監査ログ: APIキーアクセスを記録
+  await logApiKeyAccess('grok', undefined, undefined).catch(() => {
+    // ログ記録失敗は無視
   })
 
-  if (!response.ok) {
-    throw new Error(`Grok API error: ${response.statusText}`)
-  }
+  return retryWithBackoff(
+    async () => {
+      const response = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${grokApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'grok-beta',
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+        }),
+      })
 
-  const data = await response.json()
-  const content = data.choices[0]?.message?.content
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        const error: any = new Error(`Grok API error: ${response.statusText}`)
+        error.status = response.status
+        error.response = { headers: Object.fromEntries(response.headers.entries()) }
+        error.data = errorData
+        throw error
+      }
 
-  if (!content) {
-    throw new Error('No content in Grok response')
-  }
+      const data = await response.json()
+      const content = data.choices[0]?.message?.content
 
-  // Parse JSON response
-  const jsonMatch = content.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
-    throw new Error('No JSON found in Grok response')
-  }
+      if (!content) {
+        throw new Error('No content in Grok response')
+      }
 
-  const parsed = JSON.parse(jsonMatch[0])
-  
-  if (!parsed.drafts || !Array.isArray(parsed.drafts)) {
-    throw new Error('Invalid response format from Grok')
-  }
+      // Parse JSON response
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('No JSON found in Grok response')
+      }
 
-  return parsed.drafts.map((draft: any) => ({
-    text: draft.text || '',
-    naturalnessScore: draft.naturalnessScore || 0,
-    hashtags: draft.hashtags || [],
-    formatType: draft.formatType || undefined // フォーマットタイプ（オプショナル）
-  }))
+      const parsed = JSON.parse(jsonMatch[0])
+      
+      if (!parsed.drafts || !Array.isArray(parsed.drafts)) {
+        throw new Error('Invalid response format from Grok')
+      }
+
+      // 高度化されたスコア計算を適用（設定がある場合）
+      const draftPromises = parsed.drafts.map(async (draft: any) => {
+        const aiScore = draft.naturalnessScore || 0
+        
+        // 高度化設定がある場合は高度化版を使用
+        if (scoreConfig) {
+          const advancedBreakdown = await calculateAdvancedNaturalnessScore(
+            draft.text || '',
+            draft.hashtags || [],
+            scoreConfig,
+            [aiScore]
+          )
+          
+          return {
+            text: draft.text || '',
+            naturalnessScore: advancedBreakdown.factors.totalScore,
+            hashtags: draft.hashtags || [],
+            formatType: draft.formatType || undefined,
+            scoreBreakdown: advancedBreakdown,
+          }
+        }
+        
+        // デフォルトのスコア計算
+        const scoreBreakdown = calculateNaturalnessScore(
+          draft.text || '',
+          draft.hashtags || [],
+          aiScore
+        )
+        
+        return {
+          text: draft.text || '',
+          naturalnessScore: scoreBreakdown.factors.totalScore,
+          hashtags: draft.hashtags || [],
+          formatType: draft.formatType || undefined,
+          scoreBreakdown: scoreBreakdown,
+        }
+      })
+      
+      return await Promise.all(draftPromises)
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 1000,
+      maxDelay: 10000,
+      onRetry: (attempt, error) => {
+        console.log(`[Grok API] Retry attempt ${attempt}`)
+        logErrorToSentry(error, { action: 'generateWithGrok', attempt })
+      },
+    }
+  ).catch((error) => {
+    const appError = classifyError(error)
+    logErrorToSentry(appError, { action: 'generateWithGrok' })
+    throw appError
+  })
 }

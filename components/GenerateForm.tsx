@@ -12,13 +12,22 @@ import {
 } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Info, Zap, TrendingUp, RefreshCw, Plus, X } from "lucide-react"
+import { Info, Zap, TrendingUp, RefreshCw, Plus, X, Sparkles, Brain, Settings2 } from "lucide-react"
 import { PostDraft } from "@/lib/ai-generator"
 import { getTrends, getUserPurposes } from "@/app/actions"
 import { useToast } from "@/components/ui/toast"
 
 interface GenerateFormProps {
-  onGenerate: (trend: string, purpose: string) => Promise<PostDraft[]>
+  onGenerate: (
+    trend: string, 
+    purpose: string, 
+    options?: {
+      aiProvider?: 'grok' | 'claude'
+      enableHumor?: boolean
+      enableRealtimeKnowledge?: boolean
+      realtimeTrends?: string[]
+    }
+  ) => Promise<PostDraft[]>
   isLoading: boolean
   twitterAccessToken?: string | null
   userId?: string | null
@@ -69,6 +78,10 @@ export function GenerateForm({ onGenerate, isLoading, twitterAccessToken, userId
   const [isLoadingPurposes, setIsLoadingPurposes] = useState(false)
   const [showCustomPurpose, setShowCustomPurpose] = useState(false)
   const [customPurpose, setCustomPurpose] = useState("")
+  const [aiProvider, setAiProvider] = useState<'grok' | 'claude'>('grok') // デフォルト: Grok
+  const [enableHumor, setEnableHumor] = useState(false)
+  const [enableRealtimeKnowledge, setEnableRealtimeKnowledge] = useState(false)
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
 
   useEffect(() => {
     if (twitterAccessToken && trends.length === 0) {
@@ -140,7 +153,18 @@ export function GenerateForm({ onGenerate, isLoading, twitterAccessToken, userId
       return
     }
     
-    await onGenerate(trend.trim(), purpose)
+    // リアルタイムトレンド情報を取得（有効な場合）
+    let realtimeTrends: string[] = []
+    if (enableRealtimeKnowledge && trends.length > 0) {
+      realtimeTrends = trends.slice(0, 5).map(t => t.name) // 上位5件を取得
+    }
+    
+    await onGenerate(trend.trim(), purpose, {
+      aiProvider,
+      enableHumor,
+      enableRealtimeKnowledge,
+      realtimeTrends
+    })
   }
 
   return (
@@ -368,8 +392,179 @@ export function GenerateForm({ onGenerate, isLoading, twitterAccessToken, userId
             )}
           </div>
 
-          <Button type="submit" disabled={isLoading || !trend || !purpose} className="w-full">
-            {isLoading ? "生成中..." : "ツイートを生成"}
+          {/* AI Provider Selection & Advanced Options */}
+          <div className="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                AI生成オプション
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                className="text-xs rounded-full hover:bg-gray-100 dark:hover:bg-gray-900"
+              >
+                {showAdvancedOptions ? (
+                  <>
+                    <X className="h-3.5 w-3.5 mr-1" />
+                    閉じる
+                  </>
+                ) : (
+                  <>
+                    <Settings2 className="h-3.5 w-3.5 mr-1" />
+                    詳細設定
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {showAdvancedOptions && (
+              <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-800 rounded-xl bg-gray-50 dark:bg-gray-950">
+                {/* AI Provider Selection */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                    AIプロバイダー
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider('grok')}
+                      className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
+                        aiProvider === 'grok'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300'
+                          : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        <span className="font-medium">Grok</span>
+                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 rounded-full">
+                          推奨
+                        </span>
+                      </div>
+                      <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">
+                        最新知識・ユーモア対応
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider('claude')}
+                      className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
+                        aiProvider === 'claude'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300'
+                          : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <Brain className="h-4 w-4" />
+                        <span className="font-medium">Claude</span>
+                      </div>
+                      <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">
+                        高品質・安定性重視
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Grok専用オプション */}
+                {aiProvider === 'grok' && (
+                  <div className="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-800">
+                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      Grok専用機能
+                    </p>
+                    
+                    {/* ユーモア注入オプション */}
+                    <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={enableHumor}
+                        onChange={(e) => setEnableHumor(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-blue-500" />
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            ユーモア注入
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Grokの特徴的な風刺的視点や軽いユーモアを適度に注入します。投稿の魅力とエンゲージメントが向上します。
+                        </p>
+                      </div>
+                    </label>
+
+                    {/* リアルタイム知識挿入オプション */}
+                    <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={enableRealtimeKnowledge}
+                        onChange={(e) => setEnableRealtimeKnowledge(e.target.checked)}
+                        disabled={!twitterAccessToken || trends.length === 0}
+                        className="mt-0.5 h-4 w-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-green-500" />
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            リアルタイム知識挿入
+                          </span>
+                          {!twitterAccessToken && (
+                            <span className="text-xs px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded-full">
+                              Twitter連携必要
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          最新のトレンド情報を自動取得し、生成時に反映します。時事性の高い投稿が可能になります。
+                        </p>
+                        {enableRealtimeKnowledge && trends.length > 0 && (
+                          <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-950/20 rounded text-xs text-blue-700 dark:text-blue-300">
+                            <p className="font-medium mb-1">反映される最新トレンド:</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                              {trends.slice(0, 3).map((t, i) => (
+                                <li key={i}>{t.name}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                )}
+
+                {/* Claude使用時の説明 */}
+                {aiProvider === 'claude' && (
+                  <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
+                    <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg">
+                      <p className="text-xs text-purple-700 dark:text-purple-300">
+                        <strong>Claude</strong>は高品質で安定した生成を提供します。Grokのユーモアやリアルタイム知識機能はClaudeでは利用できません。
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <Button 
+            type="submit" 
+            disabled={isLoading || !trend || !purpose} 
+            className="w-full rounded-full bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors font-semibold"
+          >
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                生成中...
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                {aiProvider === 'grok' ? 'Grokで生成' : 'Claudeで生成'}
+              </span>
+            )}
           </Button>
         </form>
       </CardContent>

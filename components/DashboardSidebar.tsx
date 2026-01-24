@@ -20,7 +20,8 @@ import {
   Bookmark,
   MessageSquare,
   Lightbulb,
-  BookOpen
+  BookOpen,
+  Users
 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
@@ -44,6 +45,7 @@ interface DashboardSidebarProps {
   showQuotedTweets?: boolean
   showTrends?: boolean
   showAccounts?: boolean
+  showCommunity?: boolean
   onNavigate?: (path: string) => void
 }
 
@@ -63,6 +65,7 @@ export function DashboardSidebar({
   showQuotedTweets,
   showTrends,
   showAccounts,
+  showCommunity,
   onNavigate,
 }: DashboardSidebarProps) {
   const router = useRouter()
@@ -180,6 +183,19 @@ export function DashboardSidebar({
         }
       },
       active: showAccounts,
+    },
+    {
+      id: "community",
+      label: "コミュニティ",
+      icon: Users,
+      onClick: () => {
+        if (onNavigate) {
+          onNavigate("community")
+        } else {
+          router.push("/dashboard?view=community")
+        }
+      },
+      active: showCommunity,
     },
   ]
 
@@ -350,7 +366,7 @@ export function DashboardSidebar({
                 size="sm"
               >
                 <Twitter className="h-3.5 w-3.5 mr-1.5" />
-                Twitter連携
+                X連携
               </Button>
             </div>
           )}

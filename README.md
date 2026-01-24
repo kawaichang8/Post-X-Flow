@@ -222,6 +222,238 @@ Vercel Dashboardで以下を設定してください：
 
 詳細な手順は [`DEPLOYMENT.md`](./DEPLOYMENT.md) を参照してください。
 
+## トラブルシューティング
+
+### X（Twitter）アプリ承認エラー
+
+#### エラー: "This app is not authorized to use this endpoint"
+**原因**: Twitter Developer Portalでアプリの権限が不足している
+
+**解決方法**:
+1. [Twitter Developer Portal](https://developer.twitter.com/en/portal/dashboard)にアクセス
+2. アプリを選択 → **Settings** → **User authentication settings**
+3. **App permissions**を確認:
+   - ✅ **Read and Write** が選択されている必要があります
+   - ✅ **Type of App**: **Web App** が選択されている必要があります
+4. **Callback URI / Redirect URL**を確認:
+   - 開発環境: `http://localhost:3000/api/auth/twitter/callback`
+   - 本番環境: `https://your-domain.com/api/auth/twitter/callback`
+5. **Save**をクリックして変更を保存
+6. ブラウザのキャッシュをクリアして再試行
+
+#### エラー: "Invalid client_id or client_secret"
+**原因**: 環境変数の設定が間違っている、またはキーが無効
+
+**解決方法**:
+1. `.env.local`（開発環境）またはVercel環境変数（本番環境）を確認
+2. `TWITTER_CLIENT_ID`と`TWITTER_CLIENT_SECRET`が正しく設定されているか確認
+3. Twitter Developer Portalで新しいキーを生成（必要に応じて）
+4. アプリを再起動: `npm run dev`
+
+#### エラー: "OAuth session not found or expired"
+**原因**: OAuthフローが10分以内に完了しなかった、またはセッションが削除された
+
+**解決方法**:
+1. ブラウザのキャッシュとCookieをクリア
+2. Twitter連携を再度試行
+3. 10分以内に承認を完了する
+4. 複数のタブで同時にOAuthフローを実行していないか確認
+
+#### エラー: "access_denied" または "User denied the request"
+**原因**: ユーザーがTwitterアプリの承認を拒否した
+
+**解決方法**:
+1. ユーザーに再度Twitter連携を試行してもらう
+2. Twitterアプリの権限設定を確認（Read and Writeが必要）
+3. ブラウザのポップアップブロッカーを無効化
+
+### AI生成エラー
+
+#### エラー: "No AI API key configured"
+**原因**: `ANTHROPIC_API_KEY`または`GROK_API_KEY`が設定されていない
+
+**解決方法**:
+1. `.env.local`（開発環境）またはVercel環境変数（本番環境）を確認
+2. 以下のいずれかを設定:
+   ```env
+   ANTHROPIC_API_KEY=your_anthropic_api_key
+   # または
+   GROK_API_KEY=your_grok_api_key
+   ```
+3. アプリを再起動: `npm run dev`
+
+#### エラー: "Rate limit exceeded" または "429 Too Many Requests"
+**原因**: AI APIのレート制限に達した
+
+**解決方法**:
+1. しばらく待ってから再試行（自動リトライ機能が動作します）
+2. APIプランの制限を確認
+3. 生成頻度を減らす
+
+#### エラー: "Invalid API key"
+**原因**: APIキーが無効または期限切れ
+
+**解決方法**:
+1. APIキーを再生成
+2. 環境変数を更新
+3. アプリを再起動
+
+### データベースエラー
+
+#### エラー: "relation does not exist" または "table does not exist"
+**原因**: Supabaseテーブルが作成されていない
+
+**解決方法**:
+1. Supabase Dashboard → SQL Editorを開く
+2. `supabase-schema.sql`を実行してテーブルを作成
+3. 必要に応じて`migration-multiple-accounts.sql`も実行
+4. インデックスを追加する場合は`supabase-performance-indexes.sql`を実行
+
+#### エラー: "new row violates row-level security policy"
+**原因**: Row Level Security (RLS) ポリシーが正しく設定されていない
+
+**解決方法**:
+1. Supabase Dashboard → **Authentication** → **Policies**を確認
+2. 必要なRLSポリシーが有効になっているか確認
+3. サービスロールキーを使用している場合は、RLSをバイパスできることを確認
+
+#### エラー: "connection timeout" または "database connection failed"
+**原因**: Supabaseへの接続がタイムアウトした
+
+**解決方法**:
+1. インターネット接続を確認
+2. Supabaseプロジェクトのステータスを確認（[Status Page](https://status.supabase.com/)）
+3. 環境変数`NEXT_PUBLIC_SUPABASE_URL`と`SUPABASE_SERVICE_ROLE_KEY`が正しいか確認
+4. ローカルストレージへのフォールバック機能が動作することを確認
+
+### ビルドエラー
+
+#### エラー: "Module not found" または "Can't resolve"
+**原因**: 依存関係がインストールされていない、またはバージョン不一致
+
+**解決方法**:
+```bash
+# 依存関係を再インストール
+rm -rf node_modules package-lock.json
+npm install --legacy-peer-deps
+
+# 型チェック
+npm run type-check
+```
+
+#### エラー: "Turbopack build failed"
+**原因**: Next.js 16のTurbopack設定の問題
+
+**解決方法**:
+1. `next.config.ts`を確認（`turbopack.root`が設定されているか）
+2. `serverExternalPackages`に`twitter-api-v2`が含まれているか確認
+3. 必要に応じて`npm run build`で詳細なエラーメッセージを確認
+
+#### エラー: "TypeScript errors"
+**原因**: 型エラーが存在する
+
+**解決方法**:
+```bash
+# 型チェックを実行
+npm run type-check
+
+# エラーを修正
+# 必要に応じて型定義を追加
+```
+
+### パフォーマンス問題
+
+#### 問題: 投稿履歴の読み込みが遅い
+**解決方法**:
+1. `supabase-performance-indexes.sql`を実行してインデックスを追加
+2. ページネーションを使用（デフォルトで20件/ページ）
+3. 不要な古いデータを削除
+
+#### 問題: 画像生成が遅い
+**解決方法**:
+1. OpenAI APIのレスポンス時間を確認
+2. プログレスバーで進捗を確認
+3. ネットワーク接続を確認
+
+### その他の問題
+
+#### 問題: 環境変数が読み込まれない（Vercel）
+**解決方法**:
+1. Vercel Dashboard → **Settings** → **Environment Variables**を確認
+2. 環境変数が正しい環境（Production/Preview/Development）に設定されているか確認
+3. 変数名に`NEXT_PUBLIC_`プレフィックスが必要なもの（クライアント側）と不要なもの（サーバー側）を区別
+4. 変更後、再デプロイを実行
+
+#### 問題: ログインできない
+**解決方法**:
+1. Supabaseの認証設定を確認
+2. メールアドレスとパスワードが正しいか確認
+3. メール認証が必要な場合は、メールボックスを確認
+4. Supabase Dashboard → **Authentication** → **Users**でユーザーが作成されているか確認
+
+#### 問題: ツイートが投稿されない
+**解決方法**:
+1. Twitter連携が正しく完了しているか確認
+2. ブラウザのコンソールでエラーメッセージを確認
+3. ネットワークタブでAPIリクエストのステータスを確認
+4. Twitter APIのレート制限に達していないか確認
+5. トークンが有効か確認（自動リフレッシュ機能が動作するはずです）
+
+### デバッグ方法
+
+#### ログの確認
+- **開発環境**: ブラウザのコンソール（F12）とターミナルでログを確認
+- **本番環境**: Vercel Dashboard → **Logs**でログを確認
+- **Supabase**: Supabase Dashboard → **Logs**でデータベースログを確認
+
+#### ネットワークリクエストの確認
+1. ブラウザのDevTools → **Network**タブを開く
+2. 問題が発生する操作を実行
+3. 失敗したリクエスト（赤色）を確認
+4. ステータスコードとエラーメッセージを確認
+
+#### 環境変数の確認
+```bash
+# 開発環境で確認（.env.localが読み込まれているか）
+npm run dev
+
+# 本番環境（Vercel）で確認
+# Vercel Dashboard → Settings → Environment Variables
+```
+
+### サポート
+
+問題が解決しない場合:
+1. [GitHub Issues](https://github.com/your-repo/issues)で既存のIssueを検索
+2. 新しいIssueを作成（エラーメッセージ、再現手順、環境情報を含める）
+3. ログとスクリーンショットを添付
+
+## テスト
+
+### テストの実行
+
+```bash
+# すべてのテストを実行
+npm test
+
+# ウォッチモードで実行
+npm test -- --watch
+
+# カバレッジレポートを生成
+npm test -- --coverage
+
+# 特定のテストファイルを実行
+npm test -- components/PostDraft.test.tsx
+```
+
+### テストカバレッジ
+
+- **目標**: 80%以上のカバレッジ
+- **主要コンポーネント**: 100%カバレッジを目指す
+- **生成ロジック**: 100%カバレッジを目指す
+
+詳細は [`TESTING.md`](./TESTING.md) を参照してください。
+
 ## ライセンス
 
 MIT

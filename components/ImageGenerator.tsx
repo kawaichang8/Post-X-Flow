@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { GeneratedImage } from "@/lib/image-generator"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
+import { ProgressBar, LoadingSpinner } from "@/components/ProgressBar"
 
 interface ImageGeneratorProps {
   tweetText: string
@@ -30,14 +31,29 @@ export function ImageGenerator({
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
   const [isGeneratingVariations, setIsGeneratingVariations] = useState(false)
+  const [generationProgress, setGenerationProgress] = useState(0)
 
   const handleGenerate = async () => {
     setIsGenerating(true)
+    setGenerationProgress(0)
+    
+    // プログレスバーのシミュレーション（実際のAPI呼び出し中）
+    const progressInterval = setInterval(() => {
+      setGenerationProgress((prev) => {
+        if (prev >= 90) return prev
+        return prev + Math.random() * 10
+      })
+    }, 200)
+    
     try {
       const { generateTweetImage } = await import("@/app/actions")
+      setGenerationProgress(30)
+      
       const result = await generateTweetImage(tweetText, trend, purpose)
+      setGenerationProgress(90)
 
       if (result.success && result.image) {
+        setGenerationProgress(100)
         setGeneratedImages([result.image])
         showToast("画像を生成しました", "success")
       } else {
@@ -47,17 +63,33 @@ export function ImageGenerator({
       console.error("Error generating image:", error)
       showToast("画像の生成に失敗しました", "error")
     } finally {
+      clearInterval(progressInterval)
       setIsGenerating(false)
+      setTimeout(() => setGenerationProgress(0), 500)
     }
   }
 
   const handleGenerateVariations = async () => {
     setIsGeneratingVariations(true)
+    setGenerationProgress(0)
+    
+    // プログレスバーのシミュレーション
+    const progressInterval = setInterval(() => {
+      setGenerationProgress((prev) => {
+        if (prev >= 90) return prev
+        return prev + Math.random() * 8
+      })
+    }, 300)
+    
     try {
       const { generateTweetImageVariations } = await import("@/app/actions")
+      setGenerationProgress(20)
+      
       const result = await generateTweetImageVariations(tweetText, trend, purpose, 3)
+      setGenerationProgress(85)
 
       if (result.success && result.images) {
+        setGenerationProgress(100)
         setGeneratedImages(result.images)
         showToast(`${result.images.length}枚の画像を生成しました`, "success")
       } else {
@@ -67,7 +99,9 @@ export function ImageGenerator({
       console.error("Error generating image variations:", error)
       showToast("画像の生成に失敗しました", "error")
     } finally {
+      clearInterval(progressInterval)
       setIsGeneratingVariations(false)
+      setTimeout(() => setGenerationProgress(0), 500)
     }
   }
 
@@ -108,7 +142,7 @@ export function ImageGenerator({
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Generate Buttons */}
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <Button
             onClick={handleGenerate}
             disabled={isGenerating || isGeneratingVariations || !tweetText.trim()}
@@ -145,6 +179,18 @@ export function ImageGenerator({
             )}
           </Button>
         </div>
+
+        {/* Progress Bar */}
+        {(isGenerating || isGeneratingVariations) && (
+          <div className="space-y-2">
+            <ProgressBar
+              value={generationProgress}
+              label={isGeneratingVariations ? "画像を生成中..." : "画像を生成中..."}
+              size="sm"
+              variant="default"
+            />
+          </div>
+        )}
 
         {/* Generated Images */}
         {generatedImages.length > 0 && (

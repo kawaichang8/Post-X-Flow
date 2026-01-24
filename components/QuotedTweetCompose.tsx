@@ -63,9 +63,9 @@ export function QuotedTweetCompose({
 
   return (
     <div className="fixed inset-0 bg-black/60 dark:bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      {/* Twitter-like Quote Tweet Compose Window */}
+      {/* X-like Quote Tweet Compose Window */}
       <div className="w-full max-w-2xl bg-white dark:bg-black rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-200">
-        {/* Header - Twitter-like */}
+        {/* Header - X-like */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
           <Button
             variant="ghost"
@@ -81,7 +81,7 @@ export function QuotedTweetCompose({
           <div className="w-9" /> {/* Spacer for centering */}
         </div>
 
-        {/* Main Content - Twitter-like Layout */}
+        {/* Main Content - X-like Layout */}
         <div className="flex flex-col max-h-[80vh] overflow-y-auto">
           {/* Your Comment Section - Top */}
           <div className="px-4 pt-4 pb-2 border-b border-gray-200 dark:border-gray-800">
@@ -190,7 +190,7 @@ export function QuotedTweetCompose({
           </div>
         </div>
 
-        {/* Footer - Twitter-like Action Bar */}
+        {/* Footer - X-like Action Bar */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span className={cn(

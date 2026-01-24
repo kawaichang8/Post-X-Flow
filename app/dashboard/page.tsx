@@ -6,13 +6,13 @@ import { supabase } from "@/lib/supabase"
 import { GenerateForm } from "@/components/GenerateForm"
 import { PostDraft as PostDraftComponent } from "@/components/PostDraft"
 import { PostDraft } from "@/lib/ai-generator"
-import { generatePostDrafts, approveAndPostTweet, approveAndPostTweetWithImage, savePostToHistory, scheduleTweet, getHighEngagementPosts, getPostHistory, getPostPerformanceStats, PostPerformanceStats, updateAllTweetEngagements, getScheduledTweets, updateScheduledTweet, deleteScheduledTweet, getQuotedTweets, saveQuotedTweet, deleteQuotedTweet, QuotedTweet, postQuotedTweet, getOptimalPostingTimes, OptimalPostingTime, getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, setDefaultTwitterAccount, deleteTwitterAccount, TwitterAccount, getImprovementSuggestions, ImprovementSuggestion, generateSyntaxFormat, updateDraft, deleteDraft, searchLocations } from "@/app/actions"
+import { generatePostDrafts, approveAndPostTweet, approveAndPostTweetWithImage, savePostToHistory, scheduleTweet, getHighEngagementPosts, getPostHistory, getPostHistoryPaginated, getPostPerformanceStats, PostPerformanceStats, updateAllTweetEngagements, getScheduledTweets, updateScheduledTweet, deleteScheduledTweet, getQuotedTweets, saveQuotedTweet, deleteQuotedTweet, QuotedTweet, postQuotedTweet, getOptimalPostingTimes, OptimalPostingTime, getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, setDefaultTwitterAccount, deleteTwitterAccount, TwitterAccount, getImprovementSuggestions, ImprovementSuggestion, generateSyntaxFormat, updateDraft, deleteDraft, searchLocations } from "@/app/actions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { LogOut, History, TrendingUp, RefreshCw, Copy, Twitter, BarChart3, Calendar, FileText, Zap, Clock, Edit, Trash2, Settings, HelpCircle, Search, Filter, ArrowUpDown, List, CalendarDays, CheckSquare, Square, X, Plus, Bookmark, MessageSquare, Lightbulb, BookOpen, User, Code2, AlertTriangle, BarChart2, Layers, Image as ImageIcon, MapPin } from "lucide-react"
+import { LogOut, History, TrendingUp, RefreshCw, Copy, Twitter, BarChart3, Calendar, FileText, Zap, Clock, Edit, Trash2, Settings, HelpCircle, Search, Filter, ArrowUpDown, List, CalendarDays, CheckSquare, Square, X, Plus, Bookmark, MessageSquare, Lightbulb, BookOpen, User, Code2, AlertTriangle, BarChart2, Layers, Image as ImageIcon, MapPin, Share2 } from "lucide-react"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { CalendarWithSchedules } from "@/components/CalendarWithSchedules"
 import { openTwitterCompose } from "@/lib/twitter-client"
@@ -24,6 +24,20 @@ import { OptimalTimeSuggestions } from "@/components/OptimalTimeSuggestions"
 import { ImageGenerator } from "@/components/ImageGenerator"
 import { TweetPreview } from "@/components/TweetPreview"
 import { cn } from "@/lib/utils"
+import { ErrorDisplay, ErrorInfo } from "@/components/ErrorDisplay"
+import { savePostToLocalStorage, getPostsByUserId } from "@/lib/storage-fallback"
+import { saveOfflineDraft, getOfflineDrafts, syncOfflineDraftsToServer, OfflineDraft } from "@/lib/offline-draft-manager"
+import { ErrorType } from "@/lib/error-handler"
+import { syncLocalPostsToDatabase } from "@/lib/sync-queue"
+import { Pagination } from "@/components/Pagination"
+import { ProgressBar, LoadingSpinner } from "@/components/ProgressBar"
+import { CommunityTemplates } from "@/components/CommunityTemplates"
+import { ShareTemplateModal } from "@/components/ShareTemplateModal"
+import { UserSuggestionForm } from "@/components/UserSuggestionForm"
+import { OfflineDraftsPanel } from "@/components/OfflineDraftsPanel"
+import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
+import { EngagementPredictor } from "@/components/EngagementPredictor"
+import { EngagementFeatures } from "@/lib/engagement-predictor"
 
 interface PostHistoryItem {
   id: string
@@ -35,7 +49,7 @@ interface PostHistoryItem {
   status: 'draft' | 'posted' | 'scheduled' | 'deleted'
   tweet_id: string | null
   scheduled_for: string | null
-  engagement_score: number
+  engagement_score: number | null
   impression_count: number | null
   reach_count: number | null
   engagement_rate: number | null
@@ -80,10 +94,18 @@ function DashboardContent() {
   const [showQuotedTweets, setShowQuotedTweets] = useState(false)
   const [showTrends, setShowTrends] = useState(false)
   const [showAccounts, setShowAccounts] = useState(false)
+  const [showCommunity, setShowCommunity] = useState(false)
+  const [showShareTemplateModal, setShowShareTemplateModal] = useState(false)
+  const [selectedPostForShare, setSelectedPostForShare] = useState<PostHistoryItem | null>(null)
   const [postHistory, setPostHistory] = useState<PostHistoryItem[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyPageSize] = useState(20)
+  const [historyTotal, setHistoryTotal] = useState(0)
+  const [historyTotalPages, setHistoryTotalPages] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [errorInfo, setErrorInfo] = useState<ErrorInfo | null>(null)
   const [performanceStats, setPerformanceStats] = useState<PostPerformanceStats | null>(null)
   const [isLoadingStats, setIsLoadingStats] = useState(false)
   const [isUpdatingEngagement, setIsUpdatingEngagement] = useState(false)
@@ -133,6 +155,45 @@ function DashboardContent() {
     loadHighEngagementPosts()
     loadPerformanceStats()
     
+    // ローカルストレージとオフライン下書きの同期（接続回復時）
+    if (user && navigator.onLine) {
+      // ローカルストレージの同期
+      syncLocalPostsToDatabase(user.id).then((result) => {
+        if (result.synced > 0) {
+          showToast(`${result.synced}件の投稿を同期しました`, "success")
+          if (showHistory) {
+            loadPostHistory()
+          }
+        }
+      }).catch((error) => {
+        console.error("Error syncing local posts:", error)
+      })
+
+      // オフライン下書きの同期
+      syncOfflineDraftsToServer(user.id, async (draft) => {
+        try {
+          await savePostToHistory(user.id, {
+            text: draft.text,
+            hashtags: draft.hashtags,
+            naturalnessScore: draft.naturalnessScore,
+            formatType: draft.formatType,
+          }, draft.trend || '', draft.purpose || '', 'draft')
+        } catch (error) {
+          console.error("Error syncing offline draft:", error)
+          throw error
+        }
+      }).then((result) => {
+        if (result.synced > 0) {
+          showToast(`${result.synced}件のオフライン下書きを同期しました`, "success")
+          if (showHistory) {
+            loadPostHistory()
+          }
+        }
+      }).catch((error) => {
+        console.error("Error syncing offline drafts:", error)
+      })
+    }
+    
     // Check URL parameters for view
     const view = searchParams.get("view")
     // Reset all views
@@ -144,6 +205,7 @@ function DashboardContent() {
     setShowQuotedTweets(false)
     setShowTrends(false)
     setShowAccounts(false)
+    setShowCommunity(false)
     
     if (view === "create") {
       setShowCreate(true)
@@ -161,6 +223,8 @@ function DashboardContent() {
       setShowTrends(true)
     } else if (view === "accounts") {
       setShowAccounts(true)
+    } else if (view === "community") {
+      setShowCommunity(true)
     } else {
       // デフォルトでツイート作成画面を表示
       setShowCreate(true)
@@ -174,7 +238,7 @@ function DashboardContent() {
     if (error) {
       let message = "エラーが発生しました。"
       if (error === "twitter_oauth_error") {
-        message = `Twitter認証エラー: ${details || "認証に失敗しました"}`
+        message = `X認証エラー: ${details || "認証に失敗しました"}`
       } else if (error === "no_code") {
         message = "認証コードが取得できませんでした。"
       } else if (error === "invalid_state") {
@@ -188,7 +252,7 @@ function DashboardContent() {
       } else if (error === "oauth_failed") {
         message = `OAuth認証に失敗しました: ${details || "不明なエラー"}`
       } else if (error === "oauth_init_failed") {
-        message = `Twitter認証の開始に失敗しました: ${details || "不明なエラー"}`
+        message = `X認証の開始に失敗しました: ${details || "不明なエラー"}`
       } else if (error === "session_not_found") {
         message = "認証セッションが見つかりませんでした。もう一度お試しください。"
       } else if (error === "session_storage_failed") {
@@ -201,8 +265,8 @@ function DashboardContent() {
     }
     
     if (twitterConnected === "true") {
-      setSuccessMessage("Twitter連携が完了しました！")
-      showToast("Twitter連携が完了しました！", "success")
+      setSuccessMessage("X連携が完了しました！")
+      showToast("X連携が完了しました！", "success")
       // Refresh connection status and reload data
       const refreshData = async () => {
         await checkTwitterConnection()
@@ -223,9 +287,10 @@ function DashboardContent() {
 
   useEffect(() => {
     if (showHistory && user) {
-      loadPostHistory()
+      setHistoryPage(1) // Reset to first page when view changes
+      loadPostHistory(1, true)
     }
-  }, [showHistory, user, historyAccountFilter])
+  }, [showHistory, user, historyAccountFilter, historyStatusFilter, historySearchQuery])
 
   useEffect(() => {
     if (showAnalytics && user) {
@@ -301,7 +366,7 @@ function DashboardContent() {
 
   const handlePostQuotedTweet = async (text: string, quoteTweetId: string | null) => {
     if (!user || !twitterAccessToken) {
-      showToast("Twitter連携が必要です", "warning")
+      showToast("X連携が必要です", "warning")
       return
     }
 
@@ -413,13 +478,33 @@ function DashboardContent() {
     }
   }
 
-  const loadPostHistory = async () => {
+  const loadPostHistory = async (page: number = historyPage, usePagination: boolean = true) => {
     if (!user) return
     setIsLoadingHistory(true)
     try {
       const accountId = historyAccountFilter !== "all" ? historyAccountFilter : undefined
-      const history = await getPostHistory(user.id, 50, accountId)
-      setPostHistory(history as PostHistoryItem[])
+      
+      if (usePagination) {
+        // Use paginated API for better performance
+        const result = await getPostHistoryPaginated(user.id, {
+          page,
+          pageSize: historyPageSize,
+          accountId,
+          status: historyStatusFilter !== "all" ? historyStatusFilter : undefined,
+          searchQuery: historySearchQuery || undefined,
+        })
+        
+        setPostHistory(result.data)
+        setHistoryTotal(result.total)
+        setHistoryTotalPages(result.totalPages)
+        setHistoryPage(result.page)
+      } else {
+        // Fallback to non-paginated for compatibility
+        const history = await getPostHistory(user.id, 50, accountId)
+        setPostHistory(history as PostHistoryItem[])
+        setHistoryTotal(history.length)
+        setHistoryTotalPages(1)
+      }
     } catch (error) {
       console.error("Error loading post history:", error)
       const errorMessage = error instanceof Error ? error.message : "履歴の読み込みに失敗しました"
@@ -427,6 +512,13 @@ function DashboardContent() {
     } finally {
       setIsLoadingHistory(false)
     }
+  }
+  
+  const handleHistoryPageChange = (page: number) => {
+    setHistoryPage(page)
+    loadPostHistory(page, true)
+    // Scroll to top of history section
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const loadPerformanceStats = async () => {
@@ -446,7 +538,7 @@ function DashboardContent() {
 
   const handleUpdateEngagements = async () => {
     if (!user || !twitterAccessToken) {
-      showToast("Twitter連携が必要です", "warning")
+      showToast("X連携が必要です", "warning")
       return
     }
 
@@ -585,24 +677,83 @@ function DashboardContent() {
     }
   }
 
-  const handleGenerate = async (trend: string, purpose: string): Promise<PostDraft[]> => {
+  const handleGenerate = async (
+    trend: string, 
+    purpose: string,
+    options?: {
+      aiProvider?: 'grok' | 'claude'
+      enableHumor?: boolean
+      enableRealtimeKnowledge?: boolean
+      realtimeTrends?: string[]
+    }
+  ): Promise<PostDraft[]> => {
     setIsLoading(true)
     setCurrentTrend(trend)
     setCurrentPurpose(purpose)
+    setErrorInfo(null)
+    
     try {
-      const generatedDrafts = await generatePostDrafts(trend, purpose)
+      const generatedDrafts = await generatePostDrafts(trend, purpose, options)
       setDrafts(generatedDrafts)
 
       // Save drafts to history
       if (user) {
         for (const draft of generatedDrafts) {
-          await savePostToHistory(user.id, draft, trend, purpose, 'draft')
+          try {
+            await savePostToHistory(user.id, draft, trend, purpose, 'draft')
+          } catch (error: any) {
+            // DB接続エラーの場合はオフラインストレージに保存
+            if (error?.type === ErrorType.DATABASE_ERROR || !navigator.onLine) {
+              try {
+                // IndexedDBに保存（オフライン対応）
+                await saveOfflineDraft({
+                  text: draft.text,
+                  hashtags: draft.hashtags,
+                  naturalnessScore: draft.naturalnessScore,
+                  trend,
+                  purpose,
+                  formatType: draft.formatType,
+                })
+                console.log('[OfflineStorage] Draft saved to IndexedDB')
+                
+                // フォールバック: ローカルストレージにも保存
+                try {
+                  savePostToLocalStorage({
+                    userId: user.id,
+                    text: draft.text,
+                    hashtags: draft.hashtags,
+                    naturalnessScore: draft.naturalnessScore,
+                    trend,
+                    purpose,
+                    status: 'draft',
+                  })
+                } catch (storageError) {
+                  console.error("Error saving to local storage:", storageError)
+                }
+              } catch (offlineError) {
+                console.error("Error saving to offline storage:", offlineError)
+              }
+            } else {
+              throw error
+            }
+          }
         }
       }
       return generatedDrafts
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating drafts:", error)
-      const errorMessage = error instanceof Error ? error.message : "ツイートの生成に失敗しました"
+      const errorMessage = error?.message || (error instanceof Error ? error.message : "ツイートの生成に失敗しました")
+      
+      setErrorInfo({
+        message: errorMessage,
+        retryable: error?.retryable ?? false,
+        retryAfter: error?.retryAfter,
+        onRetry: async () => {
+          setErrorInfo(null)
+          await handleGenerate(trend, purpose, options)
+        },
+      })
+      
       showToast(errorMessage, "error")
       return []
     } finally {
@@ -708,22 +859,62 @@ function DashboardContent() {
           loadPostHistory()
         }
       } else {
-        // Show specific error message
+        // Show specific error message with retry option
         const errorMessage = result.error || "ツイートの投稿に失敗しました"
+        setErrorInfo({
+          message: errorMessage,
+          retryable: result.retryable ?? false,
+          retryAfter: result.retryAfter,
+          onRetry: async () => {
+            setErrorInfo(null)
+            await handleApprove(draft)
+          },
+        })
         showToast(errorMessage, "error")
         
         // If it's an authentication error, suggest reconnecting
         if (errorMessage.includes("認証") || errorMessage.includes("401")) {
-          showToast("Twitter連携を再度行ってください", "warning")
+          showToast("X連携を再度行ってください", "warning")
+        } else if (result.retryable && result.retryAfter) {
+          // Show countdown for retry
+          showToast(`${result.retryAfter}秒後に自動的に再試行します`, "info")
         } else {
-          // Fallback: Open Twitter compose window for other errors
-          showToast("Twitter compose windowを開きます", "info")
+          // Fallback: Open X compose window for other errors
+          showToast("X compose windowを開きます", "info")
           openTwitterCompose(draft.text)
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error posting tweet:", error)
-      const errorMessage = error instanceof Error ? error.message : "ツイートの投稿に失敗しました"
+      
+      // Try to save to local storage if DB error
+      if (error?.type === ErrorType.DATABASE_ERROR && user) {
+        try {
+          savePostToLocalStorage({
+            userId: user.id,
+            text: draft.text,
+            hashtags: draft.hashtags,
+            naturalnessScore: draft.naturalnessScore,
+            trend: currentTrend,
+            purpose: currentPurpose,
+            status: 'draft',
+          })
+          showToast("データベース接続エラーのため、ローカルストレージに保存しました", "warning")
+        } catch (storageError) {
+          console.error("Error saving to local storage:", storageError)
+        }
+      }
+      
+      const errorMessage = error?.message || error instanceof Error ? error.message : "ツイートの投稿に失敗しました"
+      setErrorInfo({
+        message: errorMessage,
+        retryable: error?.retryable ?? false,
+        retryAfter: error?.retryAfter,
+        onRetry: async () => {
+          setErrorInfo(null)
+          await handleApprove(draft)
+        },
+      })
       showToast(`${errorMessage}。Twitter compose windowを開きます。`, "warning")
       openTwitterCompose(draft.text)
     } finally {
@@ -758,10 +949,10 @@ function DashboardContent() {
         return
       }
 
-      // Redirect to Twitter OAuth
+      // Redirect to X OAuth
       window.location.href = `/api/auth/twitter?userId=${userId}`
     } catch (error) {
-      console.error("Error connecting to Twitter:", error)
+      console.error("Error connecting to X:", error)
       const errorMessage = error instanceof Error ? error.message : "Twitter連携の開始に失敗しました"
       showToast(errorMessage, "error")
     }
@@ -792,7 +983,7 @@ function DashboardContent() {
           loadPerformanceStats()
         }).catch((error) => {
           console.error("Error reposting:", error)
-          showToast("再投稿に失敗しました。Twitter compose windowを開きます。", "warning")
+          showToast("再投稿に失敗しました。X compose windowを開きます。", "warning")
           openTwitterCompose(post.text)
         })
       } else {
@@ -809,6 +1000,11 @@ function DashboardContent() {
       console.error("Error copying text:", error)
       showToast("コピーに失敗しました", "error")
     }
+  }
+
+  const handleShareTemplate = (post: PostHistoryItem) => {
+    setSelectedPostForShare(post)
+    setShowShareTemplateModal(true)
   }
 
   const getStatusLabel = (status: string) => {
@@ -874,9 +1070,20 @@ function DashboardContent() {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black flex">
-      {/* Sidebar */}
-      <DashboardSidebar
+    <>
+      {/* Error Display - Fixed at top */}
+      {errorInfo && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4">
+          <ErrorDisplay
+            error={errorInfo}
+            onDismiss={() => setErrorInfo(null)}
+          />
+        </div>
+      )}
+
+      <div className="min-h-screen bg-white dark:bg-black flex">
+        {/* Sidebar */}
+        <DashboardSidebar
         user={user}
                 twitterConnected={twitterConnected}
                 twitterAccounts={twitterAccounts}
@@ -892,6 +1099,7 @@ function DashboardContent() {
         showQuotedTweets={showQuotedTweets}
         showTrends={showTrends}
         showAccounts={showAccounts}
+        showCommunity={showCommunity}
         onNavigate={handleNavigation}
       />
 
@@ -949,35 +1157,13 @@ function DashboardContent() {
                 </div>
               </div>
 
-              {/* Quoted Tweets Button - Enhanced */}
-              <Card className="group relative border-2 border-purple-200/50 dark:border-purple-800/50 bg-gradient-to-br from-purple-50/50 to-pink-50/50 dark:from-purple-950/20 dark:to-pink-950/20 rounded-2xl hover:shadow-xl hover:shadow-purple-500/20 transition-all duration-300 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-400/10 to-pink-400/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <CardContent className="pt-6 relative">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileText className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                      <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">引用リツイート機能</span>
-                    </div>
-                    <p className="text-xs text-purple-600/70 dark:text-purple-400/70 mb-3 leading-relaxed">
-                      💡 <strong>引用リツイートとは？</strong><br />
-                      他の人のツイートを引用しながら、自分のコメントを添えて投稿できます。よく使う引用元ツイートを登録しておくと便利です。
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowQuotedTweetsModal(true)}
-                      className="w-full rounded-full border-purple-300 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:border-purple-400 dark:hover:border-purple-600 transition-all"
-                    >
-                      <FileText className="mr-2 h-4 w-4 text-purple-600 dark:text-purple-400" />
-                      <span className="text-purple-700 dark:text-purple-300 font-medium">引用ツイートを選択</span>
-                      {quotedTweets.length > 0 && (
-                        <span className="ml-2 px-2.5 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-xs font-semibold shadow-lg">
-                          {quotedTweets.length}
-                        </span>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* AI Tweet Generation - Most Used Feature */}
+              <GenerateForm 
+                onGenerate={handleGenerate} 
+                isLoading={isLoading}
+                twitterAccessToken={twitterAccessToken}
+                userId={user?.id || null}
+              />
 
               {/* Optimal Posting Time Suggestions */}
               <OptimalTimeSuggestions
@@ -987,13 +1173,6 @@ function DashboardContent() {
                   setSelectedOptimalTime(date)
                   showToast(`${date.toLocaleString('ja-JP')} に設定しました。スケジュールボタンで確定してください。`, "info")
                 }}
-              />
-
-              <GenerateForm 
-                onGenerate={handleGenerate} 
-                isLoading={isLoading}
-                twitterAccessToken={twitterAccessToken}
-                userId={user?.id || null}
               />
 
               {/* Manual Tweet Creation with Preview */}
@@ -1552,7 +1731,7 @@ function DashboardContent() {
                               const errorMessage = result.error || "ツイートの投稿に失敗しました"
                               showToast(errorMessage, "error")
                               if (errorMessage.includes("認証") || errorMessage.includes("401")) {
-                                showToast("Twitter連携を再度行ってください", "warning")
+                                showToast("X連携を再度行ってください", "warning")
                               }
                             }
                           } catch (error) {
@@ -1592,7 +1771,7 @@ function DashboardContent() {
                         プレビュー
                       </CardTitle>
                       <CardDescription className="text-sm text-gray-500 dark:text-gray-400">
-                        実際のTwitterでの表示を確認できます
+                        実際のXでの表示を確認できます
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="pt-6">
@@ -1611,6 +1790,36 @@ function DashboardContent() {
                   </Card>
                 </div>
               </div>
+
+              {/* Quoted Tweets Button - Moved to bottom as less frequently used */}
+              <Card className="group relative border-2 border-purple-200/50 dark:border-purple-800/50 bg-gradient-to-br from-purple-50/50 to-pink-50/50 dark:from-purple-950/20 dark:to-pink-950/20 rounded-2xl hover:shadow-xl hover:shadow-purple-500/20 transition-all duration-300 overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-400/10 to-pink-400/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                <CardContent className="pt-6 relative">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                      <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">引用リツイート機能</span>
+                    </div>
+                    <p className="text-xs text-purple-600/70 dark:text-purple-400/70 mb-3 leading-relaxed">
+                      💡 <strong>引用リツイートとは？</strong><br />
+                      他の人のツイートを引用しながら、自分のコメントを添えて投稿できます。よく使う引用元ツイートを登録しておくと便利です。
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowQuotedTweetsModal(true)}
+                      className="w-full rounded-full border-purple-300 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:border-purple-400 dark:hover:border-purple-600 transition-all"
+                    >
+                      <FileText className="mr-2 h-4 w-4 text-purple-600 dark:text-purple-400" />
+                      <span className="text-purple-700 dark:text-purple-300 font-medium">引用ツイートを選択</span>
+                      {quotedTweets.length > 0 && (
+                        <span className="ml-2 px-2.5 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-xs font-semibold shadow-lg">
+                          {quotedTweets.length}
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Generated Drafts - Enhanced */}
               {drafts.length > 0 && (
@@ -1696,7 +1905,7 @@ function DashboardContent() {
                         size="sm"
                         onClick={handleUpdateEngagements}
                         disabled={isUpdatingEngagement}
-                        title="Twitter APIから最新のエンゲージメント（いいね、リツイート、返信数）を取得して更新します"
+                        title="X APIから最新のエンゲージメント（いいね、リツイート、返信数）を取得して更新します"
                         className="rounded-full border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/30"
                       >
                         <RefreshCw className={`mr-2 h-4 w-4 ${isUpdatingEngagement ? 'animate-spin' : ''}`} />
@@ -2048,6 +2257,63 @@ function DashboardContent() {
               </CardContent>
             </Card>
           )}
+
+          {/* Analytics Dashboard - New AI-Powered Analytics */}
+          {showAnalytics && user && (() => {
+            // EngagementFeaturesを生成するヘルパー関数
+            const createEngagementFeatures = (): EngagementFeatures | undefined => {
+              if (drafts.length === 0 && !currentTrend && !currentPurpose) {
+                return undefined
+              }
+
+              const text = drafts.length > 0 ? drafts[0].text : ""
+              const hashtags = drafts.length > 0 ? drafts[0].hashtags : []
+              const naturalnessScore = drafts.length > 0 ? drafts[0].naturalnessScore : 50
+              const textLength = text.length
+              const hashtagCount = hashtags.length
+              const hasQuestion = text.includes("?") || text.includes("？")
+              const hasEmoji = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u.test(text)
+              const hasNumber = /\d/.test(text)
+              const now = new Date()
+              const hourOfDay = now.getHours()
+              const dayOfWeek = now.getDay()
+
+              return {
+                text,
+                hashtags,
+                naturalnessScore,
+                textLength,
+                hashtagCount,
+                hasQuestion,
+                hasEmoji,
+                hasNumber,
+                formatType: textLength > 280 ? "long" : textLength > 140 ? "medium" : "short",
+                hourOfDay,
+                dayOfWeek,
+                historicalAvgEngagement: performanceStats?.averageEngagement || undefined,
+              }
+            }
+
+            const features = createEngagementFeatures()
+
+            return (
+              <div className="space-y-6">
+                {/* Engagement Predictor - Show when there's a draft or current trend/purpose */}
+                {features && (
+                  <EngagementPredictor
+                    features={features}
+                    userId={user.id}
+                  />
+                )}
+
+                {/* Analytics Dashboard */}
+                <AnalyticsDashboard
+                  userId={user.id}
+                  features={features}
+                />
+              </div>
+            )
+          })()}
 
           {/* Scheduled Tweets View */}
           {showScheduled && (
@@ -2592,7 +2858,28 @@ function DashboardContent() {
           )}
 
           {/* Drafts View */}
-          {showDrafts && (
+          {showDrafts && user && (
+            <div className="space-y-6">
+              {/* オフライン下書きパネル */}
+              <OfflineDraftsPanel
+                userId={user.id}
+                onDraftSelect={(draft) => {
+                  // オフライン下書きをドラフトとして使用
+                  setDrafts([{
+                    text: draft.text,
+                    naturalnessScore: draft.naturalnessScore,
+                    hashtags: draft.hashtags,
+                    formatType: draft.formatType,
+                  }])
+                  setShowCreate(true)
+                  setShowDrafts(false)
+                  showToast("オフライン下書きをドラフトに追加しました", "success")
+                }}
+              />
+            </div>
+          )}
+
+          {showDrafts && !user && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -2606,7 +2893,7 @@ function DashboardContent() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={loadPostHistory}
+                  onClick={() => loadPostHistory()}
                   disabled={isLoadingHistory}
                   className="rounded-full"
                 >
@@ -2649,6 +2936,12 @@ function DashboardContent() {
                                   return
                                 }
                                 
+                                const userId = (user as User).id
+                                if (!userId) {
+                                  showToast("ユーザー情報が取得できませんでした", "error")
+                                  return
+                                }
+                                
                                 // Reload accounts to ensure we have the latest token
                                 await loadTwitterAccounts()
                                 
@@ -2670,7 +2963,7 @@ function DashboardContent() {
                                 
                                 try {
                                   const result = await approveAndPostTweet(
-                                    user.id,
+                                    userId,
                                     {
                                       text: post.text,
                                       naturalnessScore: post.naturalness_score,
@@ -2689,7 +2982,7 @@ function DashboardContent() {
                                       const errorMessage = result.error || "投稿に失敗しました"
                                       showToast(errorMessage, "error")
                                       if (errorMessage.includes("認証") || errorMessage.includes("401")) {
-                                        showToast("Twitter連携を再度行ってください", "warning")
+                                        showToast("X連携を再度行ってください", "warning")
                                       }
                                     }
                                     await loadPostHistory()
@@ -2705,9 +2998,12 @@ function DashboardContent() {
                               variant="ghost"
                               size="sm"
                               onClick={async () => {
-                                if (user && window.confirm("この下書きを削除しますか？")) {
+                                if (!user) return
+                                const userId = (user as User).id
+                                if (!userId) return
+                                if (window.confirm("この下書きを削除しますか？")) {
                                   try {
-                                    const result = await deleteDraft(post.id, user.id)
+                                    const result = await deleteDraft(post.id, userId)
                                     if (result.success) {
                                       showToast("下書きを削除しました", "success")
                                       await loadPostHistory()
@@ -2808,8 +3104,13 @@ function DashboardContent() {
                         <Button
                           onClick={async () => {
                             if (!user || !editingDraftId) return
+                            const userId = (user as User).id
+                            if (!userId) {
+                              showToast("ユーザー情報が取得できませんでした", "error")
+                              return
+                            }
                             try {
-                              const result = await updateDraft(editingDraftId, user.id, editingDraftText)
+                              const result = await updateDraft(editingDraftId, userId, editingDraftText)
                               if (result.success) {
                                 showToast("下書きを更新しました", "success")
                                 setEditingDraftId(null)
@@ -2831,6 +3132,39 @@ function DashboardContent() {
                   </Card>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Drafts View */}
+          {showDrafts && user && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                    下書き管理
+                  </h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    保存済みの下書きとオフライン下書きを管理します
+                  </p>
+                </div>
+              </div>
+
+              {/* オフライン下書きパネル */}
+              <OfflineDraftsPanel
+                userId={user.id}
+                onDraftSelect={(draft) => {
+                  // オフライン下書きをドラフトとして使用
+                  setDrafts([{
+                    text: draft.text,
+                    naturalnessScore: draft.naturalnessScore,
+                    hashtags: draft.hashtags,
+                    formatType: draft.formatType,
+                  }])
+                  setShowCreate(true)
+                  setShowDrafts(false)
+                  showToast("オフライン下書きをドラフトに追加しました", "success")
+                }}
+              />
             </div>
           )}
 
@@ -2948,7 +3282,7 @@ function DashboardContent() {
                     アカウント管理
                   </h1>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Twitterアカウントの管理（複数アカウント対応）
+                    Xアカウントの管理（複数アカウント対応）
                   </p>
                 </div>
                 <Button
@@ -2956,7 +3290,7 @@ function DashboardContent() {
                   className="rounded-full"
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  {twitterConnected ? "アカウントを追加" : "Twitter連携"}
+                  {twitterConnected ? "アカウントを追加" : "X連携"}
                 </Button>
               </div>
               {twitterConnected && twitterAccounts.length > 0 ? (
@@ -3054,7 +3388,7 @@ function DashboardContent() {
                           アカウントを追加
                         </Button>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          複数のTwitterアカウントを連携できます
+                          複数のXアカウントを連携できます
                         </p>
                       </div>
                     </CardContent>
@@ -3066,14 +3400,14 @@ function DashboardContent() {
                     <div className="text-center py-12">
                       <User className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
                       <p className="text-gray-500 dark:text-gray-400 mb-4">
-                        Twitterアカウントが連携されていません
+                        Xアカウントが連携されていません
                       </p>
                       <Button
                         onClick={handleConnectTwitter}
                         className="rounded-full"
                       >
                         <Twitter className="mr-2 h-4 w-4" />
-                        Twitter連携
+                        X連携
                       </Button>
                     </div>
                   </CardContent>
@@ -3085,16 +3419,17 @@ function DashboardContent() {
         {showHistory && (
           <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-950 transition-colors duration-200 animate-fade-in">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>投稿履歴</CardTitle>
-                  <CardDescription>過去に生成・投稿したツイート</CardDescription>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="text-lg sm:text-xl">投稿履歴</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">過去に生成・投稿したツイート</CardDescription>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={loadPostHistory}
+                  onClick={() => loadPostHistory(historyPage, true)}
                   disabled={isLoadingHistory}
+                  className="w-full sm:w-auto"
                 >
                   <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingHistory ? 'animate-spin' : ''}`} />
                   更新
@@ -3111,13 +3446,29 @@ function DashboardContent() {
                     type="text"
                     placeholder="投稿内容、トレンド、目的、ハッシュタグで検索..."
                     value={historySearchQuery}
-                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setHistorySearchQuery(e.target.value)
+                      setHistoryPage(1) // Reset to first page on search
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && user) {
+                        loadPostHistory(1, true)
+                      }
+                    }}
                     className="pl-10 bg-white dark:bg-black border-gray-200 dark:border-gray-800"
                   />
                 </div>
 
                 {/* Status Filter */}
-                <Select value={historyStatusFilter} onValueChange={setHistoryStatusFilter}>
+                <Select value={historyStatusFilter} onValueChange={(value) => {
+                  setHistoryStatusFilter(value)
+                  setHistoryPage(1) // Reset to first page on filter change
+                  setTimeout(() => {
+                    if (user) {
+                      loadPostHistory(1, true)
+                    }
+                  }, 100)
+                }}>
                   <SelectTrigger className="w-full sm:w-[180px] bg-white dark:bg-black border-gray-200 dark:border-gray-800">
                     <Filter className="mr-2 h-4 w-4" />
                     <SelectValue placeholder="ステータス" />
@@ -3134,10 +3485,10 @@ function DashboardContent() {
                 {/* Account Filter */}
                 <Select value={historyAccountFilter} onValueChange={(value) => {
                   setHistoryAccountFilter(value)
-                  // Reload history when filter changes
+                  setHistoryPage(1) // Reset to first page on filter change
                   setTimeout(() => {
                     if (user) {
-                      loadPostHistory()
+                      loadPostHistory(1, true)
                     }
                   }, 100)
                 }}>
@@ -3156,7 +3507,13 @@ function DashboardContent() {
                 </Select>
 
                 {/* Sort */}
-                <Select value={historySortBy} onValueChange={setHistorySortBy}>
+                <Select value={historySortBy} onValueChange={(value) => {
+                  setHistorySortBy(value)
+                  setHistoryPage(1) // Reset to first page on sort change
+                  if (user) {
+                    loadPostHistory(1, true)
+                  }
+                }}>
                   <SelectTrigger className="w-full sm:w-[180px] bg-white dark:bg-black border-gray-200 dark:border-gray-800">
                     <ArrowUpDown className="mr-2 h-4 w-4" />
                     <SelectValue placeholder="並び替え" />
@@ -3172,6 +3529,9 @@ function DashboardContent() {
 
               {isLoadingHistory ? (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-center py-8">
+                    <LoadingSpinner size="lg" />
+                  </div>
                   {[...Array(3)].map((_, i) => (
                     <div key={i} className="border rounded-lg p-4 space-y-3">
                       <Skeleton className="h-4 w-full" />
@@ -3184,40 +3544,11 @@ function DashboardContent() {
                   ))}
                 </div>
               ) : (() => {
-                // Filter and sort posts
-                let filteredPosts = [...postHistory]
+                // Use server-side paginated data directly (already filtered and sorted)
+                const filteredPosts = postHistory
 
-                // Search filter
-                if (historySearchQuery.trim()) {
-                  const query = historySearchQuery.toLowerCase()
-                  filteredPosts = filteredPosts.filter(post =>
-                    post.text.toLowerCase().includes(query) ||
-                    post.trend?.toLowerCase().includes(query) ||
-                    post.purpose?.toLowerCase().includes(query) ||
-                    post.hashtags?.some(tag => tag.toLowerCase().includes(query))
-                  )
-                }
-
-                // Status filter
-                if (historyStatusFilter !== "all") {
-                  filteredPosts = filteredPosts.filter(post => post.status === historyStatusFilter)
-                }
-
-                // Sort
-                filteredPosts.sort((a, b) => {
-                  switch (historySortBy) {
-                    case "newest":
-                      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                    case "oldest":
-                      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                    case "engagement_high":
-                      return (b.engagement_score || 0) - (a.engagement_score || 0)
-                    case "engagement_low":
-                      return (a.engagement_score || 0) - (b.engagement_score || 0)
-                    default:
-                      return 0
-                  }
-                })
+                // Note: Filtering and sorting are now done server-side via getPostHistoryPaginated
+                // Client-side filtering is kept for backward compatibility but will be removed
 
                 if (filteredPosts.length === 0) {
                   return (
@@ -3247,8 +3578,14 @@ function DashboardContent() {
 
                 return (
                   <div className="space-y-4">
-                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                      {filteredPosts.length}件の投稿が見つかりました
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        {historyTotal > 0 ? (
+                          <>全{historyTotal}件中 {((historyPage - 1) * historyPageSize + 1)}-{Math.min(historyPage * historyPageSize, historyTotal)}件を表示</>
+                        ) : (
+                          <>投稿が見つかりませんでした</>
+                        )}
+                      </div>
                     </div>
                     {filteredPosts.map((post, idx) => (
                     <div
@@ -3257,12 +3594,12 @@ function DashboardContent() {
                       style={{ animationDelay: `${idx * 30}ms` }}
                     >
                       <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-                        <div className="flex-1 space-y-2 min-w-0">
+                        <div className="flex-1 space-y-2 min-w-0 w-full">
                           {/* Account Badge */}
                           {post.twitter_account && (
                             <div className="flex items-center gap-2 mb-2">
-                              <User className="h-3 w-3 text-gray-400" />
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                              <User className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
                                 {post.twitter_account.account_name || post.twitter_account.username || post.twitter_account.display_name || "アカウント"}
                               </span>
                             </div>
@@ -3290,31 +3627,31 @@ function DashboardContent() {
                               <span>自然さ: {post.naturalness_score}/100</span>
                             )}
                             {post.status === 'posted' && (
-                              <span className={`font-semibold whitespace-nowrap ${post.engagement_score > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
-                                エンゲージ: {post.engagement_score > 0 ? post.engagement_score : '未取得'}
+                              <span className={`font-semibold whitespace-nowrap ${(post.engagement_score ?? 0) > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                エンゲージ: {(post.engagement_score ?? 0) > 0 ? post.engagement_score : '未取得'}
                               </span>
                             )}
                           </div>
                         </div>
 
-                        <div className="flex flex-col gap-2 items-end">
-                          <span className={`text-xs px-2 py-1 rounded ${getStatusColor(post.status)}`}>
+                        <div className="flex flex-row sm:flex-col gap-2 items-start sm:items-end w-full sm:w-auto">
+                          <span className={`text-xs px-2 py-1 rounded whitespace-nowrap ${getStatusColor(post.status)}`}>
                             {getStatusLabel(post.status)}
                           </span>
                           {post.scheduled_for && (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
                               予定: {new Date(post.scheduled_for).toLocaleString('ja-JP')}
                             </span>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-200 dark:border-gray-800">
+                      <div className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-gray-200 dark:border-gray-800">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleCopyFromHistory(post.text)}
-                          className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors flex-1 sm:flex-initial"
+                          className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors w-full sm:w-auto sm:flex-initial"
                         >
                           <Copy className="mr-2 h-4 w-4" />
                           コピー
@@ -3324,7 +3661,7 @@ function DashboardContent() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRepost(post)}
-                            className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors flex-1 sm:flex-initial"
+                            className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors w-full sm:w-auto sm:flex-initial"
                           >
                             <Twitter className="mr-2 h-4 w-4" />
                             再投稿
@@ -3335,14 +3672,39 @@ function DashboardContent() {
                             variant="ghost"
                             size="sm"
                             onClick={() => window.open(`https://twitter.com/i/web/status/${post.tweet_id}`, '_blank')}
-                            className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors flex-1 sm:flex-initial"
+                            className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors w-full sm:w-auto sm:flex-initial"
                           >
                             ツイートを見る
+                          </Button>
+                        )}
+                        {post.status === 'posted' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleShareTemplate(post)}
+                            className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors w-full sm:w-auto sm:flex-initial"
+                          >
+                            <Share2 className="mr-2 h-4 w-4" />
+                            共有
                           </Button>
                         )}
                       </div>
                     </div>
                     ))}
+                    
+                    {/* Pagination */}
+                    {historyTotalPages > 1 && (
+                      <div className="pt-6 border-t border-gray-200 dark:border-gray-800">
+                        <Pagination
+                          currentPage={historyPage}
+                          totalPages={historyTotalPages}
+                          onPageChange={handleHistoryPageChange}
+                          pageSize={historyPageSize}
+                          total={historyTotal}
+                          className="mt-4"
+                        />
+                      </div>
+                    )}
                   </div>
                 )
               })()}
@@ -3392,7 +3754,8 @@ function DashboardContent() {
           isPosting={false}
         />
       )}
-    </div>
+      </div>
+    </>
   )
 }
 

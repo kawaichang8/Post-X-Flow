@@ -1,0 +1,51 @@
+{
+  "name": "Post-X-Flow",
+  "short_name": "Post-X-Flow",
+  "description": "X（Twitter）成長自動化ツール - AIツイート生成とスケジュール投稿",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "social"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "ツイート生成",
+      "short_name": "生成",
+      "description": "新しいツイートを生成",
+      "url": "/dashboard?view=create",
+      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "投稿履歴",
+      "short_name": "履歴",
+      "description": "投稿履歴を確認",
+      "url": "/dashboard?view=history",
+      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "/dashboard?view=create",
+    "method": "GET",
+    "params": {
+      "title": "text",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
