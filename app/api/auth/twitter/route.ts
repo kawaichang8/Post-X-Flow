@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/dashboard?error=no_user_id`)
     }
 
-    console.log("[Twitter OAuth] Starting OAuth flow for user:", userId, "isAddingAccount:", isAddingAccount)
+    console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
     // Always use force_login=true to ensure fresh login screen
     // This prevents selecting a logged-out account from previous session
     // Users can explicitly select which account to connect
