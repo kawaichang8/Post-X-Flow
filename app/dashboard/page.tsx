@@ -977,20 +977,22 @@ function DashboardContent() {
         return
       }
 
-      // Show instruction
+      // Show instruction with session clearing advice
       if (twitterConnected && twitterAccounts.length > 0) {
         const confirmed = window.confirm(
           "別のアカウントを追加します。\n\n" +
-          "【重要】X側で追加したいアカウントに切り替えてから「OK」をクリックしてください。\n\n" +
+          "【重要】ログアウトしたアカウントが表示される場合：\n\n" +
+          "1. X側で一度ログアウトしてから再度試してください\n" +
+          "2. または、ブラウザのキャッシュとCookieをクリアしてください\n" +
+          "3. または、シークレットモード（プライベートブラウジング）で試してください\n\n" +
           "続行しますか？"
         )
         if (!confirmed) return
       }
 
-      // Redirect to X OAuth
-      // Don't use force_login=true - it has a bug where only logged-out accounts appear
-      // Users should switch accounts on X side before clicking
-      window.location.href = `/api/auth/twitter?userId=${userId}`
+      // Redirect to X OAuth with force_login=true and cache-busting parameters
+      const timestamp = Date.now()
+      window.location.href = `/api/auth/twitter?userId=${userId}&_t=${timestamp}`
     } catch (error) {
       console.error("Error connecting to X:", error)
       const errorMessage = error instanceof Error ? error.message : "Twitter連携の開始に失敗しました"
@@ -3633,14 +3635,20 @@ function DashboardContent() {
                           <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
                             <p className="font-medium text-blue-700 dark:text-blue-300 mb-2">💡 別のアカウントを追加する方法：</p>
                             <ol className="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400 text-left">
-                              <li className="font-semibold">X側で追加したいアカウントに切り替える</li>
                               <li>「アカウントを追加」ボタンをクリック</li>
-                              <li>認証画面で現在選択中のアカウントが表示されます</li>
+                              <li>ログイン画面が表示されます</li>
+                              <li>追加したいアカウントでログイン</li>
                             </ol>
-                            <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
-                              <p className="text-xs text-blue-600 dark:text-blue-400">
-                                💡 ヒント: X側でアカウントを切り替えてから「アカウントを追加」をクリックすると、そのアカウントが選択されます。
+                            <div className="mt-2 pt-2 border-t border-orange-200 dark:border-orange-800">
+                              <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 mb-1">
+                                ⚠️ ログアウトしたアカウントが表示される場合：
                               </p>
+                              <ul className="list-disc list-inside space-y-0.5 text-xs text-blue-600 dark:text-blue-400 ml-2">
+                                <li>X側で一度ログアウトしてから再度試してください</li>
+                                <li>ブラウザのキャッシュとCookieをクリアしてください</li>
+                                <li>シークレットモード（プライベートブラウジング）で試してください</li>
+                                <li>認証画面で「別のアカウントでログイン」をクリック</li>
+                              </ul>
                             </div>
                           </div>
                         </div>

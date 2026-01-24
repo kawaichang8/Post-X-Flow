@@ -31,17 +31,19 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
       }
     )
 
-    // Note: force_login=true has a known issue where it only shows logged-out accounts
-    // Instead, we use force_login=false and rely on X side account switching
-    // Users should switch accounts on X before starting OAuth flow
+    // Twitter OAuth 2.0 session management workaround
+    // force_login=true has a bug, but we need to try different approaches
     const authUrl = new URL(url)
-    // Don't use force_login=true - it causes logged-out accounts to appear
-    // Instead, let users switch accounts on X side before clicking
-    if (false) { // Disabled due to Twitter OAuth 2.0 bug
-      authUrl.searchParams.set('force_login', 'true')
-    }
     
-    // Add timestamp to make URL unique and bypass browser cache
+    // Try adding force_login=true with additional parameters to clear session
+    // This is a workaround for Twitter OAuth 2.0's session caching issue
+    authUrl.searchParams.set('force_login', 'true')
+    
+    // Add random nonce to make URL unique and bypass browser/Twitter cache
+    const nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+    authUrl.searchParams.set('_nonce', nonce)
+    
+    // Add timestamp to make URL unique
     const timestamp = Date.now()
     authUrl.searchParams.set('_t', timestamp.toString())
 

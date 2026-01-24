@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
-    // Don't use force_login=true - it has a bug where only logged-out accounts appear
-    // Instead, users should switch accounts on X side before starting OAuth
-    const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
+    // Use force_login=true with workarounds to try to clear session cache
+    // This is an attempt to fix the logged-out account issue
+    const { url, codeVerifier, state } = await getTwitterAuthUrl(true)
 
     console.log("[Twitter OAuth] Auth URL generated, storing in database...")
     console.log("[Twitter OAuth] Generated URL:", url)
