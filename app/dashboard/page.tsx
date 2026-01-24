@@ -8,11 +8,12 @@ import { PostDraft as PostDraftComponent } from "@/components/PostDraft"
 import { PostDraft } from "@/lib/ai-generator"
 import { generatePostDrafts, approveAndPostTweet, approveAndPostTweetWithImage, savePostToHistory, scheduleTweet, getHighEngagementPosts, getPostHistory, getPostHistoryPaginated, getPostPerformanceStats, PostPerformanceStats, updateAllTweetEngagements, getScheduledTweets, updateScheduledTweet, deleteScheduledTweet, getQuotedTweets, saveQuotedTweet, deleteQuotedTweet, QuotedTweet, postQuotedTweet, getOptimalPostingTimes, OptimalPostingTime, getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, setDefaultTwitterAccount, deleteTwitterAccount, TwitterAccount, getImprovementSuggestions, ImprovementSuggestion, generateSyntaxFormat, improveTweetTextAction, updateDraft, deleteDraft, searchLocations } from "@/app/actions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { LogOut, History, TrendingUp, RefreshCw, Copy, Twitter, BarChart3, Calendar, FileText, Zap, Clock, Edit, Trash2, Settings, HelpCircle, Search, Filter, ArrowUpDown, List, CalendarDays, CheckSquare, Square, X, Plus, Bookmark, MessageSquare, Lightbulb, BookOpen, User, Code2, AlertTriangle, BarChart2, Layers, Image as ImageIcon, MapPin, Share2 } from "lucide-react"
+import { LogOut, History, TrendingUp, RefreshCw, Copy, Twitter, BarChart3, Calendar, FileText, Zap, Clock, Edit, Trash2, Settings, HelpCircle, Search, Filter, ArrowUpDown, List, CalendarDays, CheckSquare, Square, X, Plus, Bookmark, MessageSquare, Lightbulb, BookOpen, User, Code2, AlertTriangle, BarChart2, Layers, Image as ImageIcon, MapPin, Share2, Check } from "lucide-react"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { CalendarWithSchedules } from "@/components/CalendarWithSchedules"
 import { openTwitterCompose } from "@/lib/twitter-client"
@@ -279,13 +280,28 @@ function DashboardContent() {
       const refreshData = async () => {
         await checkTwitterConnection()
         await loadTwitterAccounts() // アカウント一覧を更新
-        loadPerformanceStats()
-        loadHighEngagementPosts()
         
         // アカウント管理画面を表示している場合は、そのまま表示
-        if (showAccounts) {
+        if (showAccounts && user) {
           // アカウント管理画面を再読み込み
+          // 新しく追加されたアカウントを選択状態にする
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          if (session) {
+            const accounts = await getTwitterAccounts(session.user.id)
+            if (accounts.length > 0) {
+              // 最新のアカウント（最後に追加されたもの）を選択
+              const latestAccount = accounts[accounts.length - 1]
+              setSelectedAccountId(latestAccount.id)
+              setTwitterAccessToken(latestAccount.access_token || null)
+              showToast(`アカウント「${latestAccount.account_name || latestAccount.username}」を選択しました`, "success")
+            }
+          }
         }
+        
+        loadPerformanceStats()
+        loadHighEngagementPosts()
       }
       refreshData()
       // Clear URL parameters
@@ -466,9 +482,8 @@ function DashboardContent() {
         setSelectedAccountId(accountId)
         setTwitterAccessToken(account.access_token || null)
         
-        // Optionally set as default
-        await setDefaultTwitterAccount(accountId, session.user.id)
-        await loadTwitterAccounts() // Refresh to update is_default flags
+        // 選択のみを行い、デフォルト設定は行わない（デフォルト設定は別途行う）
+        showToast(`アカウント「${account.account_name || account.username}」を選択しました`, "success")
       }
     } catch (error) {
       console.error("Error selecting account:", error)
@@ -1197,79 +1212,108 @@ function DashboardContent() {
                   </CardHeader>
                   <CardContent className="pt-6 space-y-4">
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          ツイート内容
-                        </label>
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                              if (!manualTweetText.trim()) {
-                                showToast("テキストを入力してから改善してください", "warning")
-                                return
-                              }
-                              setIsImprovingText(true)
-                              try {
-                                const result = await improveTweetTextAction(
-                                  manualTweetText,
-                                  currentPurpose || undefined,
-                                  'grok'
-                                )
-                                if (result) {
-                                  setImprovedTextResult(result)
-                                  setShowImprovementModal(true)
-                                  showToast("テキストを改善しました", "success")
-                                } else {
-                                  showToast("テキストの改善に失敗しました", "error")
-                                }
-                              } catch (error) {
-                                console.error("Error improving text:", error)
-                                showToast("テキストの改善に失敗しました", "error")
-                              } finally {
-                                setIsImprovingText(false)
-                              }
-                            }}
-                            disabled={isImprovingText || !manualTweetText.trim()}
-                            className="rounded-full text-xs bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white border-0"
-                          >
-                            <Zap className={cn("mr-1.5 h-3.5 w-3.5", isImprovingText && "animate-spin")} />
-                            改善
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                              if (!manualTweetText.trim()) {
-                                showToast("テキストを入力してから構文を生成してください", "warning")
-                                return
-                              }
-                              setIsGeneratingSyntax(true)
-                              try {
-                                const format = await generateSyntaxFormat(manualTweetText, currentPurpose || undefined)
-                                if (format) {
-                                  setManualTweetText(format.formattedText)
-                                  showToast("構文フォーマットを適用しました", "success")
-                                } else {
-                                  showToast("構文の生成に失敗しました", "error")
-                                }
-                              } catch (error) {
-                                console.error("Error generating syntax:", error)
-                                showToast("構文の生成に失敗しました", "error")
-                              } finally {
-                                setIsGeneratingSyntax(false)
-                              }
-                            }}
-                            disabled={isGeneratingSyntax || !manualTweetText.trim()}
-                            className="rounded-full text-xs"
-                          >
-                            <Code2 className={cn("mr-1.5 h-3.5 w-3.5", isGeneratingSyntax && "animate-spin")} />
-                            構文
-                          </Button>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            ツイート内容
+                          </label>
+                          <div className="flex gap-2">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async () => {
+                                      if (!manualTweetText.trim()) {
+                                        showToast("テキストを入力してから改善してください", "warning")
+                                        return
+                                      }
+                                      setIsImprovingText(true)
+                                      try {
+                                        const result = await improveTweetTextAction(
+                                          manualTweetText,
+                                          currentPurpose || undefined,
+                                          'grok'
+                                        )
+                                        if (result) {
+                                          setImprovedTextResult(result)
+                                          setShowImprovementModal(true)
+                                          showToast("テキストを改善しました", "success")
+                                        } else {
+                                          showToast("テキストの改善に失敗しました", "error")
+                                        }
+                                      } catch (error) {
+                                        console.error("Error improving text:", error)
+                                        showToast("テキストの改善に失敗しました", "error")
+                                      } finally {
+                                        setIsImprovingText(false)
+                                      }
+                                    }}
+                                    disabled={isImprovingText || !manualTweetText.trim()}
+                                    className="rounded-full text-xs bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white border-0"
+                                  >
+                                    <Zap className={cn("mr-1.5 h-3.5 w-3.5", isImprovingText && "animate-spin")} />
+                                    改善
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs max-w-[200px]">
+                                    テキストの内容を改善します<br />
+                                    （表現の向上、エンゲージメント向上など）
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async () => {
+                                      if (!manualTweetText.trim()) {
+                                        showToast("テキストを入力してからフォーマット整形してください", "warning")
+                                        return
+                                      }
+                                      setIsGeneratingSyntax(true)
+                                      try {
+                                        const format = await generateSyntaxFormat(manualTweetText, currentPurpose || undefined)
+                                        if (format) {
+                                          setManualTweetText(format.formattedText)
+                                          showToast("フォーマットを整形しました", "success")
+                                        } else {
+                                          showToast("フォーマット整形に失敗しました", "error")
+                                        }
+                                      } catch (error) {
+                                        console.error("Error generating syntax:", error)
+                                        showToast("フォーマット整形に失敗しました", "error")
+                                      } finally {
+                                        setIsGeneratingSyntax(false)
+                                      }
+                                    }}
+                                    disabled={isGeneratingSyntax || !manualTweetText.trim()}
+                                    className="rounded-full text-xs"
+                                  >
+                                    <Code2 className={cn("mr-1.5 h-3.5 w-3.5", isGeneratingSyntax && "animate-spin")} />
+                                    整形
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs max-w-[200px]">
+                                    テキストを見やすく整形します<br />
+                                    （リスト化、見出し追加、改行など）
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
                         </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 px-1">
+                          💡 <strong>改善</strong>: 内容を向上 | <strong>整形</strong>: 見た目を整える
+                        </p>
                       </div>
                       <textarea
                         value={manualTweetText}
@@ -3505,52 +3549,92 @@ function DashboardContent() {
                               </span>
                             )}
                           </div>
-                          <div className="flex gap-2">
-                            {!account.is_default && (
+                          <div className="flex flex-col gap-2">
+                            {/* 選択状態の表示 */}
+                            {selectedAccountId === account.id && (
+                              <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">
+                                <Check className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                                  現在選択中
+                                </span>
+                              </div>
+                            )}
+                            
+                            <div className="flex gap-2">
+                              {!account.is_default && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (user) {
+                                      await setDefaultTwitterAccount(account.id, user.id)
+                                      await loadTwitterAccounts()
+                                      showToast("デフォルトアカウントを変更しました", "success")
+                                    }
+                                  }}
+                                  className="flex-1 rounded-full"
+                                >
+                                  デフォルトに設定
+                                </Button>
+                              )}
+                              <Button
+                                variant={selectedAccountId === account.id ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => {
+                                  handleSelectAccount(account.id)
+                                }}
+                                className={cn(
+                                  "flex-1 rounded-full",
+                                  selectedAccountId === account.id && "bg-blue-500 hover:bg-blue-600 text-white"
+                                )}
+                                disabled={selectedAccountId === account.id}
+                              >
+                                {selectedAccountId === account.id ? (
+                                  <>
+                                    <Check className="mr-1 h-3 w-3" />
+                                    選択中
+                                  </>
+                                ) : (
+                                  "選択"
+                                )}
+                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={async () => {
-                                  if (user) {
-                                    await setDefaultTwitterAccount(account.id, user.id)
-                                    await loadTwitterAccounts()
-                                    showToast("デフォルトアカウントを変更しました", "success")
+                                  if (user && window.confirm("このアカウントを削除しますか？")) {
+                                    try {
+                                      // 削除するアカウントが選択中の場合は、別のアカウントを選択
+                                      if (selectedAccountId === account.id && twitterAccounts.length > 1) {
+                                        const otherAccount = twitterAccounts.find(acc => acc.id !== account.id)
+                                        if (otherAccount) {
+                                          setSelectedAccountId(otherAccount.id)
+                                          setTwitterAccessToken(otherAccount.access_token || null)
+                                        }
+                                      }
+                                      
+                                      await deleteTwitterAccount(account.id, user.id)
+                                      await loadTwitterAccounts()
+                                      
+                                      if (twitterAccounts.length === 1) {
+                                        // 最後のアカウントを削除した場合
+                                        setSelectedAccountId(null)
+                                        setTwitterAccessToken(null)
+                                        setTwitterConnected(false)
+                                      }
+                                      
+                                      showToast("アカウントを削除しました", "success")
+                                    } catch (error) {
+                                      showToast("アカウントの削除に失敗しました", "error")
+                                    }
                                   }
                                 }}
-                                className="flex-1 rounded-full"
+                                className="rounded-full text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                disabled={twitterAccounts.length === 1}
                               >
-                                デフォルトに設定
+                                <Trash2 className="h-4 w-4" />
                               </Button>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                handleSelectAccount(account.id)
-                                showToast("アカウントを選択しました", "success")
-                              }}
-                              className="flex-1 rounded-full"
-                            >
-                              選択
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={async () => {
-                                if (user && window.confirm("このアカウントを削除しますか？")) {
-                                  try {
-                                    await deleteTwitterAccount(account.id, user.id)
-                                    await loadTwitterAccounts()
-                                    showToast("アカウントを削除しました", "success")
-                                  } catch (error) {
-                                    showToast("アカウントの削除に失敗しました", "error")
-                                  }
-                                }
-                              }}
-                              className="rounded-full text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
