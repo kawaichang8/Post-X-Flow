@@ -16,10 +16,9 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
-    // Always use force_login=true to ensure fresh login screen
-    // This prevents selecting a logged-out account from previous session
-    // Users can explicitly select which account to connect
-    const { url, codeVerifier, state } = await getTwitterAuthUrl(true)
+    // Don't use force_login=true - it has a bug where only logged-out accounts appear
+    // Instead, users should switch accounts on X side before starting OAuth
+    const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
 
     console.log("[Twitter OAuth] Auth URL generated, storing in database...")
     console.log("[Twitter OAuth] Generated URL:", url)

@@ -31,19 +31,17 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
       }
     )
 
-    // Add force_login=true to force account selection
-    // This ensures users can choose which Twitter account to connect, even if already logged in
-    // force_login=true forces the login screen, requiring users to re-authenticate
-    // Note: Twitter OAuth 2.0 does not support prompt=select_account parameter
-    // Users will need to use "Use another account" or logout on Twitter's login page if needed
+    // Note: force_login=true has a known issue where it only shows logged-out accounts
+    // Instead, we use force_login=false and rely on X side account switching
+    // Users should switch accounts on X before starting OAuth flow
     const authUrl = new URL(url)
-    if (forceLogin) {
+    // Don't use force_login=true - it causes logged-out accounts to appear
+    // Instead, let users switch accounts on X side before clicking
+    if (false) { // Disabled due to Twitter OAuth 2.0 bug
       authUrl.searchParams.set('force_login', 'true')
     }
     
     // Add timestamp to make URL unique and bypass browser cache
-    // This helps prevent Twitter from using cached session data
-    // Note: This is a workaround for Twitter OAuth 2.0's session caching issue
     const timestamp = Date.now()
     authUrl.searchParams.set('_t', timestamp.toString())
 
