@@ -977,18 +977,23 @@ function DashboardContent() {
         return
       }
 
-      // Show instruction for adding different account
-      if (twitterConnected && twitterAccounts.length > 0) {
+      // Check if adding a new account (vs first-time connection)
+      const isAddingAccount = twitterConnected && twitterAccounts.length > 0
+      
+      if (isAddingAccount) {
         const confirmed = window.confirm(
           "別のアカウントを追加します。\n\n" +
-          "Xアカウントを切り替えたい場合は、X側でアカウントを切り替えてから「OK」をクリックしてください。\n\n" +
+          "ログイン画面が表示されますので、追加したいアカウントでログインしてください。\n\n" +
           "続行しますか？"
         )
         if (!confirmed) return
       }
 
-      // Redirect to X OAuth (X側でアカウントを切り替えていればそのアカウントが選択される)
-      window.location.href = `/api/auth/twitter?userId=${userId}`
+      // Redirect to X OAuth
+      // For adding accounts, use force_login=true to show login screen
+      // For first-time connection, use force_login=false to allow current X session
+      const addAccountParam = isAddingAccount ? "&addAccount=true" : ""
+      window.location.href = `/api/auth/twitter?userId=${userId}${addAccountParam}`
     } catch (error) {
       console.error("Error connecting to X:", error)
       const errorMessage = error instanceof Error ? error.message : "Twitter連携の開始に失敗しました"
@@ -3631,13 +3636,14 @@ function DashboardContent() {
                           <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
                             <p className="font-medium text-blue-700 dark:text-blue-300 mb-2">💡 別のアカウントを追加する方法：</p>
                             <ol className="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400 text-left">
-                              <li>X側で追加したいアカウントに切り替える</li>
                               <li>「アカウントを追加」ボタンをクリック</li>
-                              <li>認証画面で現在選択中のアカウントが表示されます</li>
+                              <li>ログイン画面が表示されます</li>
+                              <li>追加したいアカウントのメールアドレス/ユーザー名とパスワードを入力</li>
+                              <li>既にログインしているアカウントが表示される場合は、「別のアカウントでログイン」を選択</li>
                             </ol>
                             <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
                               <p className="text-xs text-blue-600 dark:text-blue-400">
-                                💡 ヒント: X側でアカウントを切り替えてから「アカウントを追加」をクリックすると、そのアカウントが選択されます。
+                                💡 ヒント: ログイン画面が表示されるので、追加したいアカウントでログインしてください。
                               </p>
                             </div>
                           </div>

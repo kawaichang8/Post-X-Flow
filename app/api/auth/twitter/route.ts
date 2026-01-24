@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     // Get user ID from query parameter (sent from client)
     const searchParams = request.nextUrl.searchParams
     const userId = searchParams.get("userId")
+    const isAddingAccount = searchParams.get("addAccount") === "true" // Check if adding new account
 
     if (!userId) {
       const baseUrl = request.nextUrl.origin
@@ -15,12 +16,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/dashboard?error=no_user_id`)
     }
 
-    console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
-    // Don't use force_login=true - let users switch accounts on X side before starting OAuth
-    // If user switches account on X before clicking, that account will be selected
-    const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
+    console.log("[Twitter OAuth] Starting OAuth flow for user:", userId, "isAddingAccount:", isAddingAccount)
+    // Use force_login=true when adding a new account to ensure fresh login screen
+    // This prevents selecting a logged-out account from previous session
+    // For first-time connection, use force_login=false to allow current X session
+    const { url, codeVerifier, state } = await getTwitterAuthUrl(isAddingAccount)
 
-    console.log("[Twitter OAuth] Auth URL generated (with force_login=true), storing in database...")
+    console.log("[Twitter OAuth] Auth URL generated, storing in database...")
     
     // Store state, codeVerifier, and user ID in database (more reliable than cookies with ngrok)
     const supabaseAdmin = createServerClient()
