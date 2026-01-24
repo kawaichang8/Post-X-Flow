@@ -2,11 +2,8 @@
 
 import { createServerClient } from "@/lib/supabase"
 import { classifyError, logErrorToSentry } from "@/lib/error-handler"
-import { 
-  predictEngagementHybrid, 
-  EngagementFeatures, 
-  EngagementPrediction 
-} from "@/lib/engagement-predictor"
+import { predictEngagementHybrid } from "@/lib/engagement-predictor"
+import type { EngagementFeatures, EngagementPrediction } from "@/lib/engagement-predictor-types"
 import { 
   suggestOptimalTimings, 
   OptimalTiming,

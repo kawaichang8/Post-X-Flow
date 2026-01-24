@@ -4,7 +4,8 @@
  */
 
 import 'server-only'
-import { predictEngagementHybrid, EngagementFeatures } from './engagement-predictor'
+import { predictEngagementHybrid } from './engagement-predictor'
+import type { EngagementFeatures } from './engagement-predictor-types'
 
 export interface OptimalTiming {
   hour: number // 0-23

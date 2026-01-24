@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { ProgressBar } from "@/components/ProgressBar"
 import { TrendingUp, Brain, BarChart3, AlertCircle, CheckCircle2 } from "lucide-react"
 import { predictEngagement, EngagementPredictionResult } from "@/app/actions-analytics"
-import { EngagementFeatures } from "@/lib/engagement-predictor"
+import type { EngagementFeatures } from "@/lib/engagement-predictor-types"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 

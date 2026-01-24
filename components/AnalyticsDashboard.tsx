@@ -22,7 +22,7 @@ import {
   getTimingHistory,
   OptimalTimingResult
 } from "@/app/actions-analytics"
-import { EngagementFeatures } from "@/lib/engagement-predictor"
+import type { EngagementFeatures } from "@/lib/engagement-predictor-types"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 

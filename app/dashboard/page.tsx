@@ -37,7 +37,7 @@ import { UserSuggestionForm } from "@/components/UserSuggestionForm"
 import { OfflineDraftsPanel } from "@/components/OfflineDraftsPanel"
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
 import { EngagementPredictor } from "@/components/EngagementPredictor"
-import { EngagementFeatures } from "@/lib/engagement-predictor"
+import type { EngagementFeatures } from "@/lib/engagement-predictor-types"
 
 interface PostHistoryItem {
   id: string
