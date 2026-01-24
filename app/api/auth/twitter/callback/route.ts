@@ -125,22 +125,7 @@ export async function GET(request: NextRequest) {
         twitter_user_id: existingAccount.twitter_user_id,
         account_name: existingAccount.account_name
       })
-    } else {
-      console.log("[Twitter OAuth Callback] No existing account found - this is a new account")
-    }
-
-    // Check if user has any accounts (to determine if this should be default)
-    const { data: existingAccounts } = await supabaseAdmin
-      .from("user_twitter_tokens")
-      .select("id")
-      .eq("user_id", userId)
-
-    const isFirstAccount = !existingAccounts || existingAccounts.length === 0
-    const isDefault = isFirstAccount || (existingAccount?.is_default === true)
-
-    // If updating existing account, preserve is_default status and update tokens
-    let dbError
-    if (existingAccount) {
+      // If this is the same account, just update tokens (refresh)
       console.log("[Twitter OAuth Callback] Updating existing account (refreshing tokens)...")
       const { error: updateError } = await supabaseAdmin
         .from("user_twitter_tokens")
@@ -153,37 +138,50 @@ export async function GET(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", existingAccount.id)
-      dbError = updateError
-      if (!dbError) {
-        console.log("[Twitter OAuth Callback] Existing account updated successfully")
+      
+      if (updateError) {
+        console.error("[Twitter OAuth Callback] Error updating existing account:", updateError)
+        return NextResponse.redirect(`${baseUrl}/dashboard?error=storage_failed&details=${encodeURIComponent(updateError.message)}`)
       }
-    } else {
-      console.log("[Twitter OAuth Callback] Inserting new account...")
-      const { error: insertError } = await supabaseAdmin
-        .from("user_twitter_tokens")
-        .insert({
-          user_id: userId,
-          twitter_user_id: userInfo?.id || null,
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          username: userInfo?.username || null,
-          display_name: userInfo?.name || null,
-          profile_image_url: userInfo?.profile_image_url || null,
-          account_name: userInfo?.username || null, // Default account name to username
-          is_default: isDefault,
-          updated_at: new Date().toISOString(),
-        })
-      dbError = insertError
-      if (!dbError) {
-        console.log("[Twitter OAuth Callback] New account inserted successfully")
-      }
+      
+      console.log("[Twitter OAuth Callback] Existing account updated successfully")
+      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_updated=true`)
     }
 
-    if (dbError) {
-      console.error("[Twitter OAuth Callback] Error storing Twitter account:", dbError)
-      return NextResponse.redirect(`${baseUrl}/dashboard?error=storage_failed&details=${encodeURIComponent(dbError.message)}`)
-    }
+    // This is a new account - add it
+    console.log("[Twitter OAuth Callback] No existing account found - this is a new account")
+    
+    // Check if user has any accounts (to determine if this should be default)
+    const { data: existingAccounts } = await supabaseAdmin
+      .from("user_twitter_tokens")
+      .select("id")
+      .eq("user_id", userId)
 
+    const isFirstAccount = !existingAccounts || existingAccounts.length === 0
+    const isDefault = isFirstAccount
+
+    console.log("[Twitter OAuth Callback] Inserting new account...")
+    const { error: insertError } = await supabaseAdmin
+      .from("user_twitter_tokens")
+      .insert({
+        user_id: userId,
+        twitter_user_id: userInfo?.id || null,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        username: userInfo?.username || null,
+        display_name: userInfo?.name || null,
+        profile_image_url: userInfo?.profile_image_url || null,
+        account_name: userInfo?.username || null, // Default account name to username
+        is_default: isDefault,
+        updated_at: new Date().toISOString(),
+      })
+    
+    if (insertError) {
+      console.error("[Twitter OAuth Callback] Error inserting new account:", insertError)
+      return NextResponse.redirect(`${baseUrl}/dashboard?error=storage_failed&details=${encodeURIComponent(insertError.message)}`)
+    }
+    
+    console.log("[Twitter OAuth Callback] New account inserted successfully")
     console.log("[Twitter OAuth Callback] Tokens stored successfully")
     console.log("[Twitter OAuth Callback] Redirecting to dashboard with success message...")
     return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true`)
