@@ -26,6 +26,11 @@ interface PostHistoryItem {
   quote_count: number
   created_at: string
   twitter_account_id: string | null
+  twitter_account?: {
+    username: string | null
+    display_name: string | null
+    account_name: string | null
+  } | null
 }
 
 export async function generatePostDrafts(

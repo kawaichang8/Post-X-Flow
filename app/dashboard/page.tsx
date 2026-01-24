@@ -63,7 +63,7 @@ interface PostHistoryItem {
     username: string | null
     display_name: string | null
     account_name: string | null
-  }
+  } | null
 }
 
 interface User {
