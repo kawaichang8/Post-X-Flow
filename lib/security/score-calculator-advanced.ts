@@ -255,7 +255,7 @@ JSON形式で返答してください:
       const apiKey = getAnthropicApiKey()
       const anthropic = new Anthropic({ apiKey })
       const message = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-3-5-sonnet-20241022', // Optimal: Best cost/quality balance for evaluation
         max_tokens: 200,
         messages: [
           {
@@ -282,7 +282,7 @@ JSON形式で返答してください:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'grok-beta',
+          model: 'grok-4.1-fast',
           messages: [
             {
               role: 'user',

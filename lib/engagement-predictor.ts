@@ -160,7 +160,7 @@ ${historicalSummary}
 - 具体的で実用的な改善提案を含めてください`
 
     const response = await openai.chat.completions.create({
-      model: 'grok-beta',
+      model: 'grok-4.1-fast',
       messages: [
         {
           role: 'system',

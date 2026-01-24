@@ -137,11 +137,13 @@ async function generateWithClaude(trend: string, purpose: string, scoreConfig?: 
     .replace('{trend}', trend)
     .replace('{purpose}', purpose)
 
-  // Try different model names in order of preference
+  // Use Claude 3.5 Sonnet - optimal balance of cost and quality for tweet generation
+  // Cost: $3/1M input tokens, $15/1M output tokens
+  // Quality: Excellent for structured JSON output and natural text generation
+  // Fallback to Claude Sonnet 4.5 if 3.5 is unavailable
   const modelNames = [
-    'claude-3-5-sonnet-20241022', // Latest 3.5 Sonnet (stable)
-    'claude-sonnet-4-20250514',   // Newer Sonnet 4 (if available)
-    'claude-3-opus-20240229',     // Fallback to Opus
+    'claude-3-5-sonnet-20241022', // Optimal: Best cost/quality balance for tweet generation
+    'claude-sonnet-4-5',          // Fallback: Latest model if 3.5 is unavailable
   ]
 
   let lastError: AppError | null = null
@@ -356,7 +358,7 @@ async function generateWithGrok(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'grok-beta',
+          model: 'grok-4.1-fast',
           messages: [
             {
               role: 'user',
