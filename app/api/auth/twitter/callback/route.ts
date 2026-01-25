@@ -108,7 +108,9 @@ export async function GET(request: NextRequest) {
     // Log all existing accounts for this user (for debugging)
     console.log("[CALLBACK] ===== ACCOUNT CHECK START =====")
     console.log("[CALLBACK] User ID:", userId)
-    console.log("[CALLBACK] Authenticated Twitter ID:", userInfo.id, "Type:", typeof userInfo.id)
+    console.log("[CALLBACK] Authenticated Twitter ID (raw):", userInfo.id, "Type:", typeof userInfo.id)
+    const twitterUserIdStr = String(userInfo.id)
+    console.log("[CALLBACK] Authenticated Twitter ID (as string):", twitterUserIdStr)
     console.log("[CALLBACK] Authenticated Username:", userInfo.username)
     
     const { data: allUserAccounts, error: allAccountsError } = await supabaseAdmin
@@ -126,12 +128,13 @@ export async function GET(request: NextRequest) {
     
     // Check if this Twitter account is already linked to this user
     // Use twitter_user_id to identify the account (not username, as it can change)
-    console.log("[CALLBACK] Checking for existing account with twitter_user_id:", userInfo.id, "(type:", typeof userInfo.id, ")")
+    // twitterUserIdStr is already defined above
+    console.log("[CALLBACK] Checking for existing account with twitter_user_id:", twitterUserIdStr, "(original type:", typeof userInfo.id, ", converted to string)")
     const { data: existingAccount, error: checkError } = await supabaseAdmin
       .from("user_twitter_tokens")
       .select("id, is_default, username, twitter_user_id, account_name")
       .eq("user_id", userId)
-      .eq("twitter_user_id", userInfo.id)
+      .eq("twitter_user_id", twitterUserIdStr)
       .maybeSingle()
     
     console.log("[CALLBACK] Query result - found:", !!existingAccount)
@@ -139,6 +142,7 @@ export async function GET(request: NextRequest) {
       console.log("[CALLBACK] Existing account - DB ID:", existingAccount.id)
       console.log("[CALLBACK] Existing account - Twitter ID:", existingAccount.twitter_user_id, "Type:", typeof existingAccount.twitter_user_id)
       console.log("[CALLBACK] Existing account - Username:", existingAccount.username)
+      console.log("[CALLBACK] Comparison - Authenticated ID:", twitterUserIdStr, "vs DB ID:", existingAccount.twitter_user_id, "Match:", twitterUserIdStr === String(existingAccount.twitter_user_id))
     }
     if (checkError) {
       console.error("[CALLBACK] Check error:", checkError.code, checkError.message)
@@ -177,14 +181,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${baseUrl}/dashboard?error=storage_failed&details=${encodeURIComponent(updateError.message)}`)
       }
       
-      console.log("[CALLBACK] EXISTING ACCOUNT UPDATED - Twitter ID:", userInfo.id, "Username:", userInfo.username)
+      console.log("[CALLBACK] EXISTING ACCOUNT UPDATED - Twitter ID:", twitterUserIdStr, "Username:", userInfo.username)
       // Show message that account was already connected and tokens were refreshed
       // Redirect with account_already_exists flag to show appropriate message
-      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_already_exists=true&account_username=${encodeURIComponent(userInfo.username || "")}&account_id=${encodeURIComponent(userInfo.id)}`)
+      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_already_exists=true&account_username=${encodeURIComponent(userInfo.username || "")}&account_id=${encodeURIComponent(twitterUserIdStr)}`)
     }
 
     // This is a new account - add it
-    console.log("[CALLBACK] NEW ACCOUNT DETECTED - Twitter ID:", userInfo.id, "Username:", userInfo.username)
+    console.log("[CALLBACK] NEW ACCOUNT DETECTED - Twitter ID:", twitterUserIdStr, "Username:", userInfo.username)
     
     // Check if user has any accounts (to determine if this should be default)
     const { data: existingAccounts } = await supabaseAdmin
@@ -200,7 +204,7 @@ export async function GET(request: NextRequest) {
       .from("user_twitter_tokens")
       .insert({
         user_id: userId,
-        twitter_user_id: userInfo.id, // Required - cannot be null
+        twitter_user_id: twitterUserIdStr, // Required - cannot be null, ensure it's a string
         access_token: accessToken,
         refresh_token: refreshToken,
         username: userInfo.username || null,
@@ -216,7 +220,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/dashboard?error=storage_failed&details=${encodeURIComponent(insertError.message)}`)
     }
     
-    console.log("[CALLBACK] NEW ACCOUNT ADDED SUCCESSFULLY - Twitter ID:", userInfo.id, "Username:", userInfo.username)
+    console.log("[CALLBACK] NEW ACCOUNT ADDED SUCCESSFULLY - Twitter ID:", twitterUserIdStr, "Username:", userInfo.username)
     return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true`)
   } catch (error) {
     console.error("[Twitter OAuth Callback] Error in Twitter OAuth callback:", error)
