@@ -20,11 +20,11 @@ export async function GET(request: NextRequest) {
     console.log("[Twitter OAuth] User ID:", userId)
     console.log("[Twitter OAuth] Timestamp:", new Date().toISOString())
     
-    // Use simple implementation - let Twitter handle account selection naturally
-    // Users should switch accounts on X side before clicking "Add Account"
-    const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
+    // Use force_login=true to force fresh login and prevent cached account selection
+    // This should prevent logged-out accounts from being automatically selected
+    const { url, codeVerifier, state } = await getTwitterAuthUrl(true)
 
-    console.log("[Twitter OAuth] Auth URL generated (simple implementation), storing in database...")
+    console.log("[Twitter OAuth] Auth URL generated (with force_login=true), storing in database...")
     console.log("[Twitter OAuth] Generated OAuth URL:", url)
     console.log("[Twitter OAuth] State:", state)
     console.log("[Twitter OAuth] Code Verifier length:", codeVerifier?.length || 0)
