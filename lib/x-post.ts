@@ -31,32 +31,12 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
       }
     )
 
-    // Twitter OAuth 2.0 session management workaround
-    // force_login=true has a bug, but we need to try different approaches
-    const authUrl = new URL(url)
-    
-    // Try adding force_login=true with additional parameters to clear session
-    // This is a workaround for Twitter OAuth 2.0's session caching issue
-    authUrl.searchParams.set('force_login', 'true')
-    
-    // Try adding prompt=consent (OAuth 2.0 standard parameter)
-    // This may help force account selection even if session exists
-    // Note: Twitter OAuth 2.0 may not support this, but worth trying
-    authUrl.searchParams.set('prompt', 'consent')
-    
-    // Add random nonce to make URL unique and bypass browser/Twitter cache
-    const nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-    authUrl.searchParams.set('_nonce', nonce)
-    
-    // Add timestamp to make URL unique
-    const timestamp = Date.now()
-    authUrl.searchParams.set('_t', timestamp.toString())
-
-    console.log('[Twitter OAuth] Auth URL generated successfully', forceLogin ? '(with force_login=true)' : '')
-    console.log('[Twitter OAuth] Final auth URL:', authUrl.toString())
-    console.log('[Twitter OAuth] URL parameters:', Object.fromEntries(authUrl.searchParams))
-    console.log('[Twitter OAuth] Timestamp added:', timestamp)
-    return { url: authUrl.toString(), codeVerifier, state }
+    // Simple OAuth URL generation - no additional parameters
+    // Users should switch accounts on X side before starting OAuth flow
+    // This was the original working implementation
+    console.log('[Twitter OAuth] Auth URL generated successfully')
+    console.log('[Twitter OAuth] Final auth URL:', url)
+    return { url, codeVerifier, state }
   } catch (error) {
     console.error('[Twitter OAuth] Error generating auth URL:', error)
     throw error
