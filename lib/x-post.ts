@@ -38,15 +38,15 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     )
     console.log('[Twitter OAuth] OAuth link generated, URL length:', url.length)
 
-    // Add prompt=select_account to force account selection screen
-    // This should allow users to choose a different account even if one is already logged in
+    // Don't add any parameters - let Twitter handle account selection naturally
+    // When no parameters are added, Twitter will use the account that's currently selected on X
+    // Users should switch accounts on X side before clicking "Add Account"
     const authUrl = new URL(url)
-    // Remove force_login if it exists (from previous implementations)
+    // Remove any parameters that might interfere (from previous implementations)
     authUrl.searchParams.delete('force_login')
-    // Add prompt=select_account to show account selection
-    authUrl.searchParams.set('prompt', 'select_account')
+    authUrl.searchParams.delete('prompt')
 
-    console.log('[Twitter OAuth] Auth URL generated with prompt=select_account (forces account selection)')
+    console.log('[Twitter OAuth] Auth URL generated (simple implementation - no extra parameters)')
     console.log('[Twitter OAuth] Final auth URL:', authUrl.toString())
     console.log('[Twitter OAuth] URL parameters:', Object.fromEntries(authUrl.searchParams))
     console.log('[Twitter OAuth] Expected callback URL:', redirectUri)

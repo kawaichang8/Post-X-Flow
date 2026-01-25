@@ -20,11 +20,11 @@ export async function GET(request: NextRequest) {
     console.log("[Twitter OAuth] User ID:", userId)
     console.log("[Twitter OAuth] Timestamp:", new Date().toISOString())
     
-    // Use prompt=select_account to force account selection screen
-    // This should allow users to choose a different account even if one is already logged in
+    // Use simple implementation - let Twitter handle account selection naturally
+    // Users should switch accounts on X side before clicking "Add Account"
     const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
 
-    console.log("[Twitter OAuth] Auth URL generated (with prompt=select_account), storing in database...")
+    console.log("[Twitter OAuth] Auth URL generated (simple implementation), storing in database...")
     console.log("[Twitter OAuth] Generated OAuth URL:", url)
     console.log("[Twitter OAuth] State:", state)
     console.log("[Twitter OAuth] Code Verifier length:", codeVerifier?.length || 0)
