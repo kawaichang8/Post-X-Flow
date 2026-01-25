@@ -39,6 +39,11 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     // This is a workaround for Twitter OAuth 2.0's session caching issue
     authUrl.searchParams.set('force_login', 'true')
     
+    // Try adding prompt=consent (OAuth 2.0 standard parameter)
+    // This may help force account selection even if session exists
+    // Note: Twitter OAuth 2.0 may not support this, but worth trying
+    authUrl.searchParams.set('prompt', 'consent')
+    
     // Add random nonce to make URL unique and bypass browser/Twitter cache
     const nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
     authUrl.searchParams.set('_nonce', nonce)

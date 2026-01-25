@@ -979,12 +979,20 @@ function DashboardContent() {
 
       // Show instruction with session clearing advice
       if (twitterConnected && twitterAccounts.length > 0) {
+        // Get list of already connected accounts
+        const connectedUsernames = twitterAccounts
+          .map(acc => acc.username || acc.account_name || '不明')
+          .join(', ')
+        
         const confirmed = window.confirm(
           "別のアカウントを追加します。\n\n" +
-          "【重要】ログアウトしたアカウントが表示される場合：\n\n" +
-          "1. X側で一度ログアウトしてから再度試してください\n" +
-          "2. または、ブラウザのキャッシュとCookieをクリアしてください\n" +
-          "3. または、シークレットモード（プライベートブラウジング）で試してください\n\n" +
+          "【重要】既に連携済みのアカウントが表示される場合：\n\n" +
+          `現在連携中のアカウント: ${connectedUsernames}\n\n` +
+          "別のアカウントを追加するには：\n" +
+          "1. 認証画面で「別のアカウントでログイン」をクリック\n" +
+          "2. または、X側で一度ログアウトしてから再度試してください\n" +
+          "3. または、ブラウザのキャッシュとCookieをクリアしてください\n" +
+          "4. または、シークレットモード（プライベートブラウジング）で試してください\n\n" +
           "続行しますか？"
         )
         if (!confirmed) return
@@ -3637,17 +3645,18 @@ function DashboardContent() {
                             <ol className="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400 text-left">
                               <li>「アカウントを追加」ボタンをクリック</li>
                               <li>ログイン画面が表示されます</li>
+                              <li>既に連携済みのアカウントが表示される場合、認証画面で「別のアカウントでログイン」をクリック</li>
                               <li>追加したいアカウントでログイン</li>
                             </ol>
                             <div className="mt-2 pt-2 border-t border-orange-200 dark:border-orange-800">
                               <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 mb-1">
-                                ⚠️ ログアウトしたアカウントが表示される場合：
+                                ⚠️ 既に連携済みのアカウントが表示される場合：
                               </p>
                               <ul className="list-disc list-inside space-y-0.5 text-xs text-blue-600 dark:text-blue-400 ml-2">
+                                <li className="font-semibold">認証画面で「別のアカウントでログイン」をクリック（推奨）</li>
                                 <li>X側で一度ログアウトしてから再度試してください</li>
                                 <li>ブラウザのキャッシュとCookieをクリアしてください</li>
                                 <li>シークレットモード（プライベートブラウジング）で試してください</li>
-                                <li>認証画面で「別のアカウントでログイン」をクリック</li>
                               </ul>
                             </div>
                           </div>
