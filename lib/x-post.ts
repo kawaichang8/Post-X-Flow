@@ -29,12 +29,14 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     console.log('[Twitter OAuth] Timestamp:', new Date().toISOString())
     
     // generateOAuth2AuthLink is synchronous, not async
+    console.log('[Twitter OAuth] About to generate OAuth link with redirectUri:', redirectUri)
     const { url, codeVerifier, state } = client.generateOAuth2AuthLink(
       redirectUri,
       {
         scope: ['tweet.read', 'tweet.write', 'users.read', 'offline.access', 'tweet.read'],
       }
     )
+    console.log('[Twitter OAuth] OAuth link generated, URL length:', url.length)
 
     // Don't add force_login parameter - let Twitter handle account selection naturally
     // When force_login is not set, Twitter will show account selection if user has multiple accounts
