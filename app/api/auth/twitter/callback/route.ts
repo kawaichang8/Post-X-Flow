@@ -113,10 +113,14 @@ export async function GET(request: NextRequest) {
       account_name: acc.account_name
     })))
 
-    console.log("[Twitter OAuth Callback] Storing account in database...")
-    console.log("[Twitter OAuth Callback] Twitter user ID:", userInfo.id)
-    console.log("[Twitter OAuth Callback] Twitter username:", userInfo.username)
-    console.log("[Twitter OAuth Callback] Twitter display name:", userInfo.name)
+    console.log("=".repeat(80))
+    console.log("[Twitter OAuth Callback] ===== ACCOUNT INFORMATION =====")
+    console.log("[Twitter OAuth Callback] Authenticated Twitter Account:")
+    console.log("[Twitter OAuth Callback]   - Twitter User ID:", userInfo.id)
+    console.log("[Twitter OAuth Callback]   - Username:", userInfo.username)
+    console.log("[Twitter OAuth Callback]   - Display Name:", userInfo.name)
+    console.log("[Twitter OAuth Callback]   - Profile Image URL:", userInfo.profile_image_url || "N/A")
+    console.log("=".repeat(80))
     
     // Check if this Twitter account is already linked to this user
     // Use twitter_user_id to identify the account (not username, as it can change)
@@ -142,12 +146,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (existingAccount) {
-      console.log("[Twitter OAuth Callback] Found existing account:", {
-        id: existingAccount.id,
-        username: existingAccount.username,
-        twitter_user_id: existingAccount.twitter_user_id,
-        account_name: existingAccount.account_name
-      })
+      console.log("=".repeat(80))
+      console.log("[Twitter OAuth Callback] ===== EXISTING ACCOUNT FOUND =====")
+      console.log("[Twitter OAuth Callback] Existing account details:")
+      console.log("[Twitter OAuth Callback]   - Database ID:", existingAccount.id)
+      console.log("[Twitter OAuth Callback]   - Username:", existingAccount.username)
+      console.log("[Twitter OAuth Callback]   - Twitter User ID:", existingAccount.twitter_user_id)
+      console.log("[Twitter OAuth Callback]   - Account Name:", existingAccount.account_name)
+      console.log("[Twitter OAuth Callback]   - Is Default:", existingAccount.is_default)
+      console.log("[Twitter OAuth Callback]")
+      console.log("[Twitter OAuth Callback] Authenticated account matches existing account!")
+      console.log("[Twitter OAuth Callback] This means the same Twitter account was used.")
+      console.log("[Twitter OAuth Callback] To add a different account, switch accounts on X side first.")
+      console.log("=".repeat(80))
       // If this is the same account, just update tokens (refresh)
       // This prevents duplicate accounts from being created
       console.log("[Twitter OAuth Callback] Updating existing account (refreshing tokens)...")
@@ -175,7 +186,11 @@ export async function GET(request: NextRequest) {
     }
 
     // This is a new account - add it
+    console.log("=".repeat(80))
+    console.log("[Twitter OAuth Callback] ===== NEW ACCOUNT DETECTED =====")
     console.log("[Twitter OAuth Callback] No existing account found - this is a new account")
+    console.log("[Twitter OAuth Callback] Will add as new account to database")
+    console.log("=".repeat(80))
     
     // Check if user has any accounts (to determine if this should be default)
     const { data: existingAccounts } = await supabaseAdmin
