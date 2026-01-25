@@ -4,9 +4,15 @@ import { cookies } from "next/headers"
 import { createServerClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
+  // Always log callback received - this helps debug if callback is being called
   const baseUrl = request.nextUrl.origin
-  console.log("[Twitter OAuth Callback] Callback received")
-  console.log("[Twitter OAuth Callback] Full URL:", request.url)
+  const fullUrl = request.url
+  console.log("=".repeat(80))
+  console.log("[Twitter OAuth Callback] ===== CALLBACK RECEIVED =====")
+  console.log("[Twitter OAuth Callback] Timestamp:", new Date().toISOString())
+  console.log("[Twitter OAuth Callback] Full URL:", fullUrl)
+  console.log("[Twitter OAuth Callback] Base URL:", baseUrl)
+  console.log("=".repeat(80))
   
   const searchParams = request.nextUrl.searchParams
   const code = searchParams.get("code")
