@@ -107,9 +107,10 @@ export async function GET(request: NextRequest) {
       .select("id, twitter_user_id, username, account_name")
       .eq("user_id", userId)
     
-    const existingAccountIds = allUserAccounts?.map((acc: { twitter_user_id: string | null }) => acc.twitter_user_id).filter(Boolean) || []
-    console.log("[CALLBACK] Existing account Twitter IDs:", existingAccountIds.join(", ") || "none")
-    console.log("[CALLBACK] Authenticated Twitter ID:", userInfo.id, "Username:", userInfo.username)
+    const existingAccountIds = allUserAccounts?.map((acc: { twitter_user_id: string | null; username: string | null }) => `${acc.twitter_user_id} (@${acc.username || 'unknown'})`).filter(Boolean) || []
+    console.log("[CALLBACK] ===== ACCOUNT CHECK =====")
+    console.log("[CALLBACK] Existing accounts:", existingAccountIds.length > 0 ? existingAccountIds.join(", ") : "none")
+    console.log("[CALLBACK] Authenticated account:", userInfo.id, "(@", userInfo.username, ")")
     
     // Check if this Twitter account is already linked to this user
     // Use twitter_user_id to identify the account (not username, as it can change)
@@ -135,8 +136,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (existingAccount) {
-      console.log("[CALLBACK] EXISTING ACCOUNT FOUND - Twitter ID:", userInfo.id, "Username:", userInfo.username)
-      console.log("[CALLBACK] This account is already linked. To add different account, logout from X first.")
+      console.log("[CALLBACK] ===== EXISTING ACCOUNT DETECTED =====")
+      console.log("[CALLBACK] Authenticated account (ID:", userInfo.id, "@", userInfo.username, ") is already linked")
+      console.log("[CALLBACK] Database record ID:", existingAccount.id, "Username:", existingAccount.username)
+      console.log("[CALLBACK] To add a different account:")
+      console.log("[CALLBACK] 1. Logout from X (twitter.com or x.com)")
+      console.log("[CALLBACK] 2. Or switch to the account you want to add on X")
+      console.log("[CALLBACK] 3. Then click 'Add Account' again")
       // If this is the same account, just update tokens (refresh)
       // This prevents duplicate accounts from being created
       console.log("[Twitter OAuth Callback] Updating existing account (refreshing tokens)...")

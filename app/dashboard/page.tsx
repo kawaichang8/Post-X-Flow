@@ -284,9 +284,9 @@ function DashboardContent() {
           ? (existingAccountInfo.account_name || existingAccountInfo.username || "不明")
           : (accountUsername || "不明")
         
-        const message = `このアカウント（@${accountUsername || accountDisplayName}）は既に連携されています。\n\n別のアカウントを追加するには：\n1. X側（twitter.com または x.com）でログアウト\n2. または、X側で追加したいアカウントに切り替え\n3. その後、「アカウントを追加」を再度クリック`
+        const message = `このアカウント（@${accountUsername || accountDisplayName}、Twitter ID: ${accountId || "不明"}）は既に連携されています。\n\n別のアカウントを追加するには：\n1. X側（twitter.com または x.com）で完全にログアウトしてください\n2. または、X側で追加したいアカウントに切り替えてください\n3. その後、「アカウントを追加」を再度クリックしてください\n\n現在連携中のアカウント数: ${twitterAccounts.length}`
         setErrorMessage(message)
-        showToast(message, "warning", 10000)
+        showToast(message, "warning", 15000)
       } else {
         setSuccessMessage("X連携が完了しました！")
         showToast("X連携が完了しました！", "success")
