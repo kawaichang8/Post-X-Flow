@@ -5,14 +5,15 @@ import { createServerClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
   // Always log callback received - this helps debug if callback is being called
+  // Use simple log format that Vercel can display
   const baseUrl = request.nextUrl.origin
   const fullUrl = request.url
-  console.log("=".repeat(80))
-  console.log("[Twitter OAuth Callback] ===== CALLBACK RECEIVED =====")
-  console.log("[Twitter OAuth Callback] Timestamp:", new Date().toISOString())
-  console.log("[Twitter OAuth Callback] Full URL:", fullUrl)
-  console.log("[Twitter OAuth Callback] Base URL:", baseUrl)
-  console.log("=".repeat(80))
+  const timestamp = new Date().toISOString()
+  
+  // Use simple console.log that Vercel can display
+  console.log("[CALLBACK] Received at", timestamp)
+  console.log("[CALLBACK] URL:", fullUrl)
+  console.log("[CALLBACK] Base URL:", baseUrl)
   
   const searchParams = request.nextUrl.searchParams
   const code = searchParams.get("code")
@@ -106,21 +107,16 @@ export async function GET(request: NextRequest) {
       .select("id, twitter_user_id, username, account_name")
       .eq("user_id", userId)
     
-    console.log("[Twitter OAuth Callback] Existing accounts for user:", allUserAccounts?.map((acc: { id: string; twitter_user_id: string | null; username: string | null; account_name: string | null }) => ({
+    console.log("[CALLBACK] All existing accounts for user:", allUserAccounts?.map((acc: { id: string; twitter_user_id: string | null; username: string | null; account_name: string | null }) => ({
       id: acc.id,
       twitter_user_id: acc.twitter_user_id,
       username: acc.username,
       account_name: acc.account_name
     })))
+    console.log("[CALLBACK] Authenticated account - Twitter User ID:", userInfo.id, "Username:", userInfo.username)
 
-    console.log("=".repeat(80))
-    console.log("[Twitter OAuth Callback] ===== ACCOUNT INFORMATION =====")
-    console.log("[Twitter OAuth Callback] Authenticated Twitter Account:")
-    console.log("[Twitter OAuth Callback]   - Twitter User ID:", userInfo.id)
-    console.log("[Twitter OAuth Callback]   - Username:", userInfo.username)
-    console.log("[Twitter OAuth Callback]   - Display Name:", userInfo.name)
-    console.log("[Twitter OAuth Callback]   - Profile Image URL:", userInfo.profile_image_url || "N/A")
-    console.log("=".repeat(80))
+    // Log authenticated account information
+    console.log("[CALLBACK] Authenticated account - ID:", userInfo.id, "Username:", userInfo.username, "Name:", userInfo.name)
     
     // Check if this Twitter account is already linked to this user
     // Use twitter_user_id to identify the account (not username, as it can change)
@@ -146,19 +142,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (existingAccount) {
-      console.log("=".repeat(80))
-      console.log("[Twitter OAuth Callback] ===== EXISTING ACCOUNT FOUND =====")
-      console.log("[Twitter OAuth Callback] Existing account details:")
-      console.log("[Twitter OAuth Callback]   - Database ID:", existingAccount.id)
-      console.log("[Twitter OAuth Callback]   - Username:", existingAccount.username)
-      console.log("[Twitter OAuth Callback]   - Twitter User ID:", existingAccount.twitter_user_id)
-      console.log("[Twitter OAuth Callback]   - Account Name:", existingAccount.account_name)
-      console.log("[Twitter OAuth Callback]   - Is Default:", existingAccount.is_default)
-      console.log("[Twitter OAuth Callback]")
-      console.log("[Twitter OAuth Callback] Authenticated account matches existing account!")
-      console.log("[Twitter OAuth Callback] This means the same Twitter account was used.")
-      console.log("[Twitter OAuth Callback] To add a different account, switch accounts on X side first.")
-      console.log("=".repeat(80))
+      console.log("[CALLBACK] EXISTING ACCOUNT FOUND!")
+    console.log("[CALLBACK] Existing account - Database ID:", existingAccount.id, "Username:", existingAccount.username, "Twitter User ID:", existingAccount.twitter_user_id)
+    console.log("[CALLBACK] Authenticated account - Twitter User ID:", userInfo.id, "Username:", userInfo.username)
+    console.log("[CALLBACK] MATCH: Authenticated account (Twitter ID:", userInfo.id, ") matches existing account (Twitter ID:", existingAccount.twitter_user_id, ")")
+    console.log("[CALLBACK] This means the same Twitter account was used.")
+    console.log("[CALLBACK] To add a different account, you must switch accounts on X side before clicking 'Add Account'.")
       // If this is the same account, just update tokens (refresh)
       // This prevents duplicate accounts from being created
       console.log("[Twitter OAuth Callback] Updating existing account (refreshing tokens)...")
@@ -179,18 +168,15 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${baseUrl}/dashboard?error=storage_failed&details=${encodeURIComponent(updateError.message)}`)
       }
       
-      console.log("[Twitter OAuth Callback] Existing account updated successfully")
+      console.log("[CALLBACK] Existing account updated successfully - tokens refreshed")
       // Show message that account was already connected and tokens were refreshed
       // Redirect with account_already_exists flag to show appropriate message
-      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_already_exists=true&account_username=${encodeURIComponent(userInfo.username || "")}`)
+      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_already_exists=true&account_username=${encodeURIComponent(userInfo.username || "")}&account_id=${encodeURIComponent(userInfo.id)}`)
     }
 
     // This is a new account - add it
-    console.log("=".repeat(80))
-    console.log("[Twitter OAuth Callback] ===== NEW ACCOUNT DETECTED =====")
-    console.log("[Twitter OAuth Callback] No existing account found - this is a new account")
-    console.log("[Twitter OAuth Callback] Will add as new account to database")
-    console.log("=".repeat(80))
+    console.log("[CALLBACK] NEW ACCOUNT DETECTED - ID:", userInfo.id, "Username:", userInfo.username)
+    console.log("[CALLBACK] No existing account found - will add as new account")
     
     // Check if user has any accounts (to determine if this should be default)
     const { data: existingAccounts } = await supabaseAdmin

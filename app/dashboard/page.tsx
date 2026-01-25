@@ -274,14 +274,19 @@ function DashboardContent() {
     
     const accountAlreadyExists = searchParams.get("account_already_exists")
     const accountUsername = searchParams.get("account_username")
+    const accountId = searchParams.get("account_id")
     
     if (twitterConnected === "true") {
       if (accountAlreadyExists === "true") {
-        const message = accountUsername 
-          ? `このアカウント（@${accountUsername}）は既に連携されています。別のアカウントを追加するには、X側でアカウントを切り替えてから再度お試しください。`
-          : "このアカウントは既に連携されています。別のアカウントを追加するには、X側でアカウントを切り替えてから再度お試しください。"
+        // Get existing accounts to show which one was detected
+        const existingAccountInfo = twitterAccounts.find(acc => acc.twitter_user_id === accountId)
+        const accountDisplayName = existingAccountInfo 
+          ? (existingAccountInfo.account_name || existingAccountInfo.username || "不明")
+          : (accountUsername || "不明")
+        
+        const message = `このアカウント（@${accountUsername || accountDisplayName}）は既に連携されています。\n\n別のアカウントを追加するには：\n1. X側（twitter.com または x.com）でログアウト\n2. または、X側で追加したいアカウントに切り替え\n3. その後、「アカウントを追加」を再度クリック`
         setErrorMessage(message)
-        showToast(message, "warning")
+        showToast(message, "warning", 10000)
       } else {
         setSuccessMessage("X連携が完了しました！")
         showToast("X連携が完了しました！", "success")
