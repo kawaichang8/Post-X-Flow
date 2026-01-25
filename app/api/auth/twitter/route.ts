@@ -16,11 +16,11 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
-    // Simple OAuth flow - users should switch accounts on X side before clicking
-    // This was the original working implementation
+    // Use force_login=false to allow Twitter's default account selection behavior
+    // This allows users to switch accounts in the same browser session
     const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
 
-    console.log("[Twitter OAuth] Auth URL generated, storing in database...")
+    console.log("[Twitter OAuth] Auth URL generated (without force_login), storing in database...")
     
     // Store state, codeVerifier, and user ID in database (more reliable than cookies with ngrok)
     const supabaseAdmin = createServerClient()
