@@ -21,7 +21,12 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     const client = getTwitterAuthClient()
     const redirectUri = process.env.TWITTER_REDIRECT_URI || (process.env.NEXT_PUBLIC_APP_URL || '') + '/api/auth/twitter/callback'
     
-    console.log('[Twitter OAuth] Generating auth URL with redirect URI:', redirectUri)
+    console.log("=".repeat(80))
+    console.log('[Twitter OAuth] ===== GENERATING AUTH URL =====')
+    console.log('[Twitter OAuth] Redirect URI:', redirectUri)
+    console.log('[Twitter OAuth] TWITTER_REDIRECT_URI env:', process.env.TWITTER_REDIRECT_URI || 'NOT SET')
+    console.log('[Twitter OAuth] NEXT_PUBLIC_APP_URL env:', process.env.NEXT_PUBLIC_APP_URL || 'NOT SET')
+    console.log('[Twitter OAuth] Timestamp:', new Date().toISOString())
     
     // generateOAuth2AuthLink is synchronous, not async
     const { url, codeVerifier, state } = client.generateOAuth2AuthLink(
@@ -42,6 +47,8 @@ export async function getTwitterAuthUrl(forceLogin: boolean = true): Promise<{ u
     console.log('[Twitter OAuth] Auth URL generated successfully (without force_login - allows account switching)')
     console.log('[Twitter OAuth] Final auth URL:', authUrl.toString())
     console.log('[Twitter OAuth] URL parameters:', Object.fromEntries(authUrl.searchParams))
+    console.log('[Twitter OAuth] Expected callback URL:', redirectUri)
+    console.log("=".repeat(80))
     return { url: authUrl.toString(), codeVerifier, state }
   } catch (error) {
     console.error('[Twitter OAuth] Error generating auth URL:', error)

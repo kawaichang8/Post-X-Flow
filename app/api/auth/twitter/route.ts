@@ -15,12 +15,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/dashboard?error=no_user_id`)
     }
 
-    console.log("[Twitter OAuth] Starting OAuth flow for user:", userId)
+    console.log("=".repeat(80))
+    console.log("[Twitter OAuth] ===== STARTING OAUTH FLOW =====")
+    console.log("[Twitter OAuth] User ID:", userId)
+    console.log("[Twitter OAuth] Timestamp:", new Date().toISOString())
+    
     // Use force_login=false to allow Twitter's default account selection behavior
     // This allows users to switch accounts in the same browser session
     const { url, codeVerifier, state } = await getTwitterAuthUrl(false)
 
     console.log("[Twitter OAuth] Auth URL generated (without force_login), storing in database...")
+    console.log("[Twitter OAuth] Generated OAuth URL:", url)
+    console.log("[Twitter OAuth] State:", state)
+    console.log("[Twitter OAuth] Code Verifier length:", codeVerifier?.length || 0)
     
     // Store state, codeVerifier, and user ID in database (more reliable than cookies with ngrok)
     const supabaseAdmin = createServerClient()
