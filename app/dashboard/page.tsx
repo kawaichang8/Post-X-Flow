@@ -272,9 +272,20 @@ function DashboardContent() {
       router.replace("/dashboard")
     }
     
+    const accountAlreadyExists = searchParams.get("account_already_exists")
+    const accountUsername = searchParams.get("account_username")
+    
     if (twitterConnected === "true") {
-      setSuccessMessage("X連携が完了しました！")
-      showToast("X連携が完了しました！", "success")
+      if (accountAlreadyExists === "true") {
+        const message = accountUsername 
+          ? `このアカウント（@${accountUsername}）は既に連携されています。別のアカウントを追加するには、X側でアカウントを切り替えてから再度お試しください。`
+          : "このアカウントは既に連携されています。別のアカウントを追加するには、X側でアカウントを切り替えてから再度お試しください。"
+        setErrorMessage(message)
+        showToast(message, "warning")
+      } else {
+        setSuccessMessage("X連携が完了しました！")
+        showToast("X連携が完了しました！", "success")
+      }
       // Refresh connection status and reload data
       const refreshData = async () => {
         await checkTwitterConnection()

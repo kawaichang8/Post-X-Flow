@@ -110,15 +110,25 @@ export async function GET(request: NextRequest) {
     console.log("[Twitter OAuth Callback] Storing account in database...")
     console.log("[Twitter OAuth Callback] Twitter user ID:", userInfo.id)
     console.log("[Twitter OAuth Callback] Twitter username:", userInfo.username)
+    console.log("[Twitter OAuth Callback] Twitter display name:", userInfo.name)
     
     // Check if this Twitter account is already linked to this user
     // Use twitter_user_id to identify the account (not username, as it can change)
+    console.log("[Twitter OAuth Callback] Checking for existing account with twitter_user_id:", userInfo.id)
     const { data: existingAccount, error: checkError } = await supabaseAdmin
       .from("user_twitter_tokens")
       .select("id, is_default, username, twitter_user_id, account_name")
       .eq("user_id", userId)
       .eq("twitter_user_id", userInfo.id)
       .maybeSingle()
+    
+    console.log("[Twitter OAuth Callback] Existing account check result:", {
+      found: !!existingAccount,
+      accountId: existingAccount?.id,
+      username: existingAccount?.username,
+      twitter_user_id: existingAccount?.twitter_user_id,
+      checkError: checkError ? { code: checkError.code, message: checkError.message } : null
+    })
 
     if (checkError && checkError.code !== 'PGRST116') {
       console.error("[Twitter OAuth Callback] Error checking existing account:", checkError)
@@ -154,7 +164,8 @@ export async function GET(request: NextRequest) {
       
       console.log("[Twitter OAuth Callback] Existing account updated successfully")
       // Show message that account was already connected and tokens were refreshed
-      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_updated=true&message=${encodeURIComponent("このアカウントは既に連携されています。トークンを更新しました。")}`)
+      // Redirect with account_already_exists flag to show appropriate message
+      return NextResponse.redirect(`${baseUrl}/dashboard?twitter_connected=true&account_already_exists=true&account_username=${encodeURIComponent(userInfo.username || "")}`)
     }
 
     // This is a new account - add it
