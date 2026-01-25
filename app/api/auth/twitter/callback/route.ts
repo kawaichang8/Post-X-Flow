@@ -102,19 +102,27 @@ export async function GET(request: NextRequest) {
     }
 
     // Log all existing accounts for this user (for debugging)
-    const { data: allUserAccounts } = await supabaseAdmin
+    console.log("[CALLBACK] ===== ACCOUNT CHECK START =====")
+    console.log("[CALLBACK] User ID:", userId)
+    console.log("[CALLBACK] Authenticated Twitter ID:", userInfo.id, "Type:", typeof userInfo.id)
+    console.log("[CALLBACK] Authenticated Username:", userInfo.username)
+    
+    const { data: allUserAccounts, error: allAccountsError } = await supabaseAdmin
       .from("user_twitter_tokens")
       .select("id, twitter_user_id, username, account_name")
       .eq("user_id", userId)
     
+    if (allAccountsError) {
+      console.error("[CALLBACK] Error fetching all accounts:", allAccountsError)
+    }
+    
     const existingAccountIds = allUserAccounts?.map((acc: { twitter_user_id: string | null; username: string | null }) => `${acc.twitter_user_id} (@${acc.username || 'unknown'})`).filter(Boolean) || []
-    console.log("[CALLBACK] ===== ACCOUNT CHECK =====")
+    console.log("[CALLBACK] Existing accounts count:", allUserAccounts?.length || 0)
     console.log("[CALLBACK] Existing accounts:", existingAccountIds.length > 0 ? existingAccountIds.join(", ") : "none")
-    console.log("[CALLBACK] Authenticated account:", userInfo.id, "(@", userInfo.username, ")")
     
     // Check if this Twitter account is already linked to this user
     // Use twitter_user_id to identify the account (not username, as it can change)
-    console.log("[Twitter OAuth Callback] Checking for existing account with twitter_user_id:", userInfo.id)
+    console.log("[CALLBACK] Checking for existing account with twitter_user_id:", userInfo.id, "(type:", typeof userInfo.id, ")")
     const { data: existingAccount, error: checkError } = await supabaseAdmin
       .from("user_twitter_tokens")
       .select("id, is_default, username, twitter_user_id, account_name")
@@ -122,13 +130,15 @@ export async function GET(request: NextRequest) {
       .eq("twitter_user_id", userInfo.id)
       .maybeSingle()
     
-    console.log("[Twitter OAuth Callback] Existing account check result:", {
-      found: !!existingAccount,
-      accountId: existingAccount?.id,
-      username: existingAccount?.username,
-      twitter_user_id: existingAccount?.twitter_user_id,
-      checkError: checkError ? { code: checkError.code, message: checkError.message } : null
-    })
+    console.log("[CALLBACK] Query result - found:", !!existingAccount)
+    if (existingAccount) {
+      console.log("[CALLBACK] Existing account - DB ID:", existingAccount.id)
+      console.log("[CALLBACK] Existing account - Twitter ID:", existingAccount.twitter_user_id, "Type:", typeof existingAccount.twitter_user_id)
+      console.log("[CALLBACK] Existing account - Username:", existingAccount.username)
+    }
+    if (checkError) {
+      console.error("[CALLBACK] Check error:", checkError.code, checkError.message)
+    }
 
     if (checkError && checkError.code !== 'PGRST116') {
       console.error("[Twitter OAuth Callback] Error checking existing account:", checkError)
