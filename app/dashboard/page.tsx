@@ -241,11 +241,14 @@ function DashboardContent() {
     // Check for URL parameters
     const error = searchParams.get("error")
     const details = searchParams.get("details")
+    const errorMessage = searchParams.get("message")
     const twitterConnected = searchParams.get("twitter_connected")
     
     if (error) {
       let message = "エラーが発生しました。"
-      if (error === "twitter_oauth_error") {
+      if (error === "access_denied") {
+        message = errorMessage || "認証がキャンセルされました。別のアカウントを追加するには、X側（twitter.com または x.com）でログアウトしてから再度お試しください。"
+      } else if (error === "twitter_oauth_error") {
         message = `X認証エラー: ${details || "認証に失敗しました"}`
       } else if (error === "no_code") {
         message = "認証コードが取得できませんでした。"
@@ -267,7 +270,7 @@ function DashboardContent() {
         message = "認証セッションの保存に失敗しました。もう一度お試しください。"
       }
       setErrorMessage(message)
-      showToast(message, "error")
+      showToast(message, "error", 10000)
       // Clear URL parameters
       router.replace("/dashboard")
     }

@@ -31,7 +31,11 @@ export async function GET(request: NextRequest) {
 
   // Check for OAuth errors from Twitter
   if (error) {
-    console.error("[Twitter OAuth Callback] Twitter OAuth error:", error, errorDescription)
+    console.error("[CALLBACK] Twitter OAuth error:", error, errorDescription)
+    if (error === 'access_denied') {
+      console.log("[CALLBACK] User denied access - authentication was cancelled")
+      return NextResponse.redirect(`${baseUrl}/dashboard?error=access_denied&message=${encodeURIComponent('認証がキャンセルされました。別のアカウントを追加するには、X側でログアウトしてから再度お試しください。')}`)
+    }
     return NextResponse.redirect(`${baseUrl}/dashboard?error=twitter_oauth_error&details=${encodeURIComponent(errorDescription || error)}`)
   }
 
