@@ -89,6 +89,17 @@ export function GenerateForm({ onGenerate, isLoading, twitterAccessToken, userId
     }
   }, [twitterAccessToken])
 
+  // Auto-refresh trends every 5 minutes when trends are shown
+  useEffect(() => {
+    if (!showTrends || !twitterAccessToken) return
+
+    const interval = setInterval(() => {
+      loadTrends()
+    }, 5 * 60 * 1000) // 5 minutes
+
+    return () => clearInterval(interval)
+  }, [showTrends, twitterAccessToken])
+
   useEffect(() => {
     if (userId) {
       loadUserPurposes()
@@ -101,8 +112,12 @@ export function GenerateForm({ onGenerate, isLoading, twitterAccessToken, userId
     try {
       const fetchedTrends = await getTrends(twitterAccessToken)
       setTrends(fetchedTrends)
+      if (fetchedTrends.length > 0) {
+        showToast("トレンドを更新しました", "success")
+      }
     } catch (error) {
       console.error("Error loading trends:", error)
+      showToast("トレンドの取得に失敗しました。しばらくしてから再度お試しください。", "error")
     } finally {
       setIsLoadingTrends(false)
     }
@@ -224,9 +239,22 @@ export function GenerateForm({ onGenerate, isLoading, twitterAccessToken, userId
               <div className="border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-3 bg-white dark:bg-black">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">リアルタイムトレンド（日本）</p>
-                  {isLoadingTrends && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">読み込み中...</span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={loadTrends}
+                      disabled={isLoadingTrends}
+                      className="h-7 px-2 text-xs"
+                    >
+                      <RefreshCw className={`h-3 w-3 mr-1 ${isLoadingTrends ? 'animate-spin' : ''}`} />
+                      更新
+                    </Button>
+                    {isLoadingTrends && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">読み込み中...</span>
+                    )}
+                  </div>
                 </div>
                 {trends.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
