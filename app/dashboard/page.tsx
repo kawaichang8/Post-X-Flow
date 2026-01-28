@@ -7,22 +7,30 @@ import { PostDraft } from "@/lib/ai-generator"
 import { 
   generatePostDrafts, 
   approveAndPostTweet, 
-  approveAndPostTweetWithImage, 
   savePostToHistory, 
   scheduleTweet, 
-  getPostHistory,
   getScheduledTweets, 
-  updateScheduledTweet, 
-  deleteScheduledTweet, 
+  deleteScheduledTweet,
   getTwitterAccounts, 
   getDefaultTwitterAccount, 
+  getTwitterAccountById,
   setDefaultTwitterAccount, 
-  deleteTwitterAccount, 
   TwitterAccount 
 } from "@/app/actions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { useToast } from "@/components/ui/toast"
 import { ModernSidebar } from "@/components/ModernSidebar"
 import { ModernGenerateForm } from "@/components/ModernGenerateForm"
@@ -95,6 +103,17 @@ function NewDashboardContent() {
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(false)
 
+  // Schedule modal (when user clicks schedule on a post)
+  const [schedulingPost, setSchedulingPost] = useState<GeneratedPost | null>(null)
+  const [scheduleDate, setScheduleDate] = useState("")
+
+  // Load scheduled tweets when calendar view is active
+  useEffect(() => {
+    if (activeView === "calendar" && user) {
+      getScheduledTweets(user.id).then(setScheduledTweets)
+    }
+  }, [activeView, user])
+
   // Check user session
   useEffect(() => {
     const checkUser = async () => {
@@ -140,21 +159,13 @@ function NewDashboardContent() {
     const error = searchParams.get("twitter_error")
     
     if (success === "true") {
-      showToast({
-        title: "Twitter連携成功",
-        description: "アカウントが正常に連携されました",
-        variant: "default",
-      })
+      showToast("Twitter連携成功: アカウントが正常に連携されました", "success")
       // Reload accounts
       if (user) {
         getTwitterAccounts(user.id).then(setTwitterAccounts)
       }
     } else if (error) {
-      showToast({
-        title: "Twitter連携エラー",
-        description: decodeURIComponent(error),
-        variant: "destructive",
-      })
+      showToast(`Twitter連携エラー: ${decodeURIComponent(error)}`, "error")
     }
   }, [searchParams, user, showToast])
 
@@ -167,35 +178,18 @@ function NewDashboardContent() {
     setCurrentPurpose(purpose)
     
     try {
-      const result = await generatePostDrafts(trend, purpose, user.id, aiProvider)
-      
-      if (result.success && result.drafts) {
-        const generatedPosts: GeneratedPost[] = result.drafts.map((draft, index) => ({
-          id: `draft-${Date.now()}-${index}`,
-          content: memoFlowEnabled && promotionUrl 
-            ? `${draft.text}\n\n${promotionUrl}` 
-            : draft.text,
-          naturalness_score: draft.naturalness_score,
-        }))
-        setDrafts(generatedPosts)
-        showToast({
-          title: "投稿を生成しました",
-          description: `${generatedPosts.length}件の投稿案を作成しました`,
-          variant: "default",
-        })
-      } else {
-        showToast({
-          title: "生成エラー",
-          description: result.error || "投稿の生成に失敗しました",
-          variant: "destructive",
-        })
-      }
+      const draftsResult = await generatePostDrafts(trend, purpose, { aiProvider: aiProvider as "grok" | "claude" })
+      const generatedPosts: GeneratedPost[] = draftsResult.map((draft: PostDraft, index: number) => ({
+        id: `draft-${Date.now()}-${index}`,
+        content: memoFlowEnabled && promotionUrl 
+          ? `${draft.text}\n\n${promotionUrl}` 
+          : draft.text,
+        naturalness_score: draft.naturalnessScore,
+      }))
+      setDrafts(generatedPosts)
+      showToast(`${generatedPosts.length}件の投稿案を作成しました`, "success")
     } catch (error) {
-      showToast({
-        title: "エラー",
-        description: "投稿の生成中にエラーが発生しました",
-        variant: "destructive",
-      })
+      showToast("投稿の生成に失敗しました", "error")
     } finally {
       setIsGenerating(false)
     }
@@ -204,72 +198,60 @@ function NewDashboardContent() {
   // Post to Twitter
   const handlePost = async (postId: string) => {
     const post = drafts.find(d => d.id === postId)
-    if (!post || !selectedAccountId) return
+    if (!post || !selectedAccountId || !user) return
+    
+    const account = await getTwitterAccountById(selectedAccountId, user.id)
+    if (!account?.access_token) {
+      showToast("選択されたアカウントのトークンが見つかりません", "error")
+      return
+    }
     
     setIsPosting(true)
     try {
-      const result = await approveAndPostTweet(post.content, selectedAccountId)
+      const draft: PostDraft = {
+        text: post.content,
+        naturalnessScore: post.naturalness_score,
+        hashtags: [],
+      }
+      const result = await approveAndPostTweet(
+        user.id,
+        draft,
+        account.access_token,
+        currentTrend,
+        currentPurpose,
+        selectedAccountId
+      )
       
       if (result.success) {
-        showToast({
-          title: "投稿完了",
-          description: "ツイートが投稿されました",
-          variant: "default",
-        })
-        // Remove from drafts
+        showToast("ツイートが投稿されました", "success")
         setDrafts(prev => prev.filter(d => d.id !== postId))
       } else {
-        showToast({
-          title: "投稿エラー",
-          description: result.error || "ツイートの投稿に失敗しました",
-          variant: "destructive",
-        })
+        showToast(result.error || "ツイートの投稿に失敗しました", "error")
       }
     } catch (error) {
-      showToast({
-        title: "エラー",
-        description: "投稿中にエラーが発生しました",
-        variant: "destructive",
-      })
+      showToast("投稿中にエラーが発生しました", "error")
     } finally {
       setIsPosting(false)
     }
   }
 
-  // Schedule post
-  const handleSchedule = async (postId: string, scheduledTime: Date) => {
-    const post = drafts.find(d => d.id === postId)
-    if (!post || !selectedAccountId || !user) return
-    
+  // Schedule post (called when user confirms date in modal)
+  const handleScheduleConfirm = async () => {
+    if (!schedulingPost || !user || !scheduleDate) return
+    const scheduledTime = new Date(scheduleDate)
+    const draft: PostDraft = {
+      text: schedulingPost.content,
+      naturalnessScore: schedulingPost.naturalness_score,
+      hashtags: [],
+    }
     try {
-      const result = await scheduleTweet(
-        user.id,
-        post.content,
-        [],
-        scheduledTime.toISOString(),
-        selectedAccountId
-      )
-      
-      if (result.success) {
-        showToast({
-          title: "スケジュール設定完了",
-          description: `${scheduledTime.toLocaleString('ja-JP')}に投稿予定`,
-          variant: "default",
-        })
-        setDrafts(prev => prev.filter(d => d.id !== postId))
-      } else {
-        showToast({
-          title: "スケジュールエラー",
-          description: result.error || "スケジュール設定に失敗しました",
-          variant: "destructive",
-        })
-      }
+      await scheduleTweet(user.id, draft, scheduledTime, currentTrend, currentPurpose)
+      showToast(`${scheduledTime.toLocaleString("ja-JP")}に投稿予定です`, "success")
+      setDrafts(prev => prev.filter(d => d.id !== schedulingPost.id))
+      setSchedulingPost(null)
+      setScheduleDate("")
     } catch (error) {
-      showToast({
-        title: "エラー",
-        description: "スケジュール設定中にエラーが発生しました",
-        variant: "destructive",
-      })
+      showToast("スケジュール設定に失敗しました", "error")
     }
   }
 
@@ -278,27 +260,16 @@ function NewDashboardContent() {
     const post = drafts.find(d => d.id === postId)
     if (!post || !user) return
     
+    const draft: PostDraft = {
+      text: post.content,
+      naturalnessScore: post.naturalness_score,
+      hashtags: [],
+    }
     try {
-      await savePostToHistory(
-        user.id,
-        post.content,
-        [],
-        post.naturalness_score,
-        currentTrend,
-        currentPurpose,
-        selectedAccountId
-      )
-      showToast({
-        title: "保存完了",
-        description: "下書きを保存しました",
-        variant: "default",
-      })
+      await savePostToHistory(user.id, draft, currentTrend, currentPurpose, "draft")
+      showToast("下書きを保存しました", "success")
     } catch (error) {
-      showToast({
-        title: "エラー",
-        description: "保存中にエラーが発生しました",
-        variant: "destructive",
-      })
+      showToast("保存中にエラーが発生しました", "error")
     }
   }
 
@@ -318,11 +289,7 @@ function NewDashboardContent() {
         window.location.href = data.url
       }
     } catch (error) {
-      showToast({
-        title: "エラー",
-        description: "Twitter連携URLの取得に失敗しました",
-        variant: "destructive",
-      })
+      showToast("Twitter連携URLの取得に失敗しました", "error")
     }
   }
 
@@ -366,11 +333,37 @@ function NewDashboardContent() {
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-white dark:from-gray-900 dark:to-gray-800">
       {/* Onboarding Tour */}
       {showOnboarding && (
-        <OnboardingTour 
-          onComplete={handleOnboardingComplete}
-          onSkip={handleOnboardingComplete}
-        />
+        <OnboardingTour onComplete={handleOnboardingComplete} />
       )}
+
+      {/* Schedule date modal */}
+      <AlertDialog open={!!schedulingPost} onOpenChange={(open) => { if (!open) { setSchedulingPost(null); setScheduleDate("") } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>投稿日時を設定</AlertDialogTitle>
+            <AlertDialogDescription>
+              スケジュールする日時を選択してください
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Input
+              type="datetime-local"
+              value={scheduleDate}
+              onChange={(e) => setScheduleDate(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleScheduleConfirm}
+              disabled={!scheduleDate}
+            >
+              スケジュール
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="flex">
         {/* Modern Sidebar */}
@@ -440,12 +433,11 @@ function NewDashboardContent() {
                           key={post.id}
                           post={post}
                           index={index}
+                          onContentChange={(id, content) => handleEditContent(id, content)}
                           onPost={() => handlePost(post.id)}
-                          onSchedule={(time) => handleSchedule(post.id, time)}
-                          onSave={() => handleSaveDraft(post.id)}
-                          onEdit={(content) => handleEditContent(post.id, content)}
+                          onSchedule={() => setSchedulingPost(post)}
+                          onSaveDraft={() => handleSaveDraft(post.id)}
                           isPosting={isPosting}
-                          twitterConnected={twitterConnected}
                         />
                       ))}
                     </div>
@@ -491,10 +483,27 @@ function NewDashboardContent() {
             )}
 
             {/* Calendar View */}
-            {activeView === "calendar" && (
+            {activeView === "calendar" && user && (
               <EnhancedCalendar
-                userId={user?.id || ""}
-                selectedAccountId={selectedAccountId}
+                scheduledPosts={scheduledTweets.map((p) => ({
+                  id: p.id,
+                  content: p.text,
+                  scheduled_for: new Date(p.scheduled_for || 0),
+                  status: "pending" as const,
+                }))}
+                onDateSelect={() => {}}
+                onPostSelect={() => {}}
+                onDeletePost={async (id) => {
+                  try {
+                    await deleteScheduledTweet(id)
+                    setScheduledTweets((prev) => prev.filter((x) => x.id !== id))
+                    showToast("スケジュールを削除しました", "success")
+                  } catch {
+                    showToast("削除に失敗しました", "error")
+                  }
+                }}
+                onEditPost={() => {}}
+                onAddNew={() => {}}
               />
             )}
 
