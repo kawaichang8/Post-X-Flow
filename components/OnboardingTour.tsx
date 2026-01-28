@@ -27,7 +27,7 @@ interface TourStep {
 const tourSteps: TourStep[] = [
   {
     id: "welcome",
-    title: "FreeXBoostへようこそ！",
+    title: "postXflowへようこそ！",
     description: "AIを活用してX（Twitter）の投稿を効率的に作成・管理できます。簡単なツアーで使い方をご紹介します。",
     icon: Sparkles,
   },
@@ -142,7 +142,7 @@ export function OnboardingTour({ onComplete, isOpen = true }: OnboardingTourProp
         {/* Backdrop */}
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
-        {/* Tour Modal */}
+        {/* Tour Modal - Premium */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -150,20 +150,24 @@ export function OnboardingTour({ onComplete, isOpen = true }: OnboardingTourProp
           transition={{ type: "spring", duration: 0.5 }}
           className="absolute inset-0 flex items-center justify-center p-4"
         >
-          <div className="relative w-full max-w-md bg-card rounded-2xl shadow-2xl overflow-hidden">
+          <div className="relative w-full max-w-md glass-card rounded-3xl shadow-2xl overflow-hidden border-0">
+            {/* Decorative gradient orbs */}
+            <div className="absolute -top-20 -right-20 w-40 h-40 bg-green-500/20 rounded-full blur-3xl" />
+            <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl" />
+            
             {/* Close button */}
             <button
               onClick={handleSkip}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-accent transition-colors z-10"
+              className="absolute top-5 right-5 p-2.5 rounded-xl bg-background/50 hover:bg-background/80 transition-all z-10"
               aria-label="ツアーをスキップ"
             >
               <X className="h-4 w-4 text-muted-foreground" />
             </button>
 
-            {/* Progress indicator */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-muted">
+            {/* Progress indicator - Premium */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-muted/50">
               <motion.div
-                className="h-full bg-primary"
+                className="h-full bg-gradient-to-r from-green-500 to-emerald-500"
                 initial={{ width: 0 }}
                 animate={{ width: `${((currentStep + 1) / tourSteps.length) * 100}%` }}
                 transition={{ duration: 0.3 }}
@@ -171,20 +175,21 @@ export function OnboardingTour({ onComplete, isOpen = true }: OnboardingTourProp
             </div>
 
             {/* Content */}
-            <div className="p-8 pt-10">
-              {/* Icon */}
+            <div className="relative p-8 pt-12">
+              {/* Icon - Premium with glow */}
               <motion.div
                 key={step.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.4, type: "spring" }}
                 className="flex justify-center mb-6"
               >
                 <div className={cn(
-                  "w-16 h-16 rounded-2xl flex items-center justify-center",
-                  "bg-gradient-to-br from-green-500 to-emerald-600"
+                  "w-20 h-20 rounded-3xl flex items-center justify-center",
+                  "bg-gradient-to-br from-green-400 via-green-500 to-emerald-600",
+                  "shadow-xl shadow-green-500/30 logo-glow"
                 )}>
-                  <Icon className="h-8 w-8 text-white" />
+                  <Icon className="h-10 w-10 text-white" />
                 </div>
               </motion.div>
 
@@ -230,13 +235,13 @@ export function OnboardingTour({ onComplete, isOpen = true }: OnboardingTourProp
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="px-8 pb-8 flex items-center justify-between gap-3">
+            {/* Actions - Premium */}
+            <div className="relative px-8 pb-8 flex items-center justify-between gap-3">
               <Button
                 variant="ghost"
                 onClick={handlePrevious}
                 disabled={isFirst}
-                className="rounded-xl"
+                className="rounded-xl hover:bg-accent/80"
               >
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 戻る
@@ -246,16 +251,25 @@ export function OnboardingTour({ onComplete, isOpen = true }: OnboardingTourProp
                 <Button
                   variant="ghost"
                   onClick={handleSkip}
-                  className="text-muted-foreground rounded-xl"
+                  className="text-muted-foreground rounded-xl hover:bg-accent/80"
                 >
                   スキップ
                 </Button>
                 <Button
                   onClick={handleNext}
-                  className="rounded-xl bg-primary hover:bg-primary/90"
+                  className="rounded-xl btn-gradient-premium text-white font-medium shadow-lg shadow-green-500/20 min-w-[100px]"
                 >
-                  {isLast ? "始める" : "次へ"}
-                  {!isLast && <ChevronRight className="h-4 w-4 ml-1" />}
+                  {isLast ? (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-1.5" />
+                      始める
+                    </>
+                  ) : (
+                    <>
+                      次へ
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </>
+                  )}
                 </Button>
               </div>
             </div>

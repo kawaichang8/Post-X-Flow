@@ -258,7 +258,7 @@ export function DashboardSidebar({
           {/* Logo/Header */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-800">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-              Post-X-Flow
+              postXflow
             </h2>
             {user?.email && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">

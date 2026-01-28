@@ -39,7 +39,9 @@ import { OnboardingTour } from "@/components/OnboardingTour"
 import { EnhancedCalendar } from "@/components/EnhancedCalendar"
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
 import { cn } from "@/lib/utils"
-import { Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { StatsHeroBanner } from "@/components/StatsHeroBanner"
+import { Switch } from "@/components/ui/switch"
+import { Loader2, RefreshCw, Sparkles, Link2, Moon, Sun } from "lucide-react"
 
 interface PostHistoryItem {
   id: string
@@ -380,100 +382,161 @@ function NewDashboardContent() {
         />
 
         {/* Main Content */}
-        <main className="flex-1 min-h-screen p-4 md:p-6 lg:p-8 ml-16 md:ml-64 transition-all duration-300">
+        <main className="flex-1 min-h-screen p-4 md:p-6 lg:p-8 ml-20 md:ml-[280px] transition-all duration-300">
           <div className="max-w-6xl mx-auto space-y-6">
             
             {/* Create View */}
             {activeView === "create" && (
               <>
-                {/* Header */}
-                <div className="flex items-center justify-between">
+                {/* Premium Header with MemoFlow Toggle */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
-                      <Sparkles className="h-7 w-7 text-green-500" />
-                      投稿を作成
+                    <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-500/20">
+                        <Sparkles className="h-5 w-5 text-white" />
+                      </div>
+                      <span className="bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">投稿を作成</span>
                     </h1>
-                    <p className="text-muted-foreground mt-1">
+                    <p className="text-muted-foreground mt-2 text-sm md:text-base">
                       AIを活用してエンゲージメントの高い投稿を生成
                     </p>
                   </div>
+                  
+                  {/* MemoFlow Toggle - Premium */}
+                  <div className={cn(
+                    "flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all duration-300",
+                    memoFlowEnabled 
+                      ? "border-green-500/30 bg-green-50/50 dark:bg-green-950/30" 
+                      : "border-border bg-card/50"
+                  )}>
+                    <Link2 className={cn(
+                      "h-4 w-4 transition-colors",
+                      memoFlowEnabled ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                    )} />
+                    <span className="text-sm font-medium">MemoFlow</span>
+                    <Switch
+                      checked={memoFlowEnabled}
+                      onCheckedChange={setMemoFlowEnabled}
+                      className="data-[state=checked]:bg-green-500"
+                    />
+                  </div>
                 </div>
 
-                {/* Generate Form */}
-                <ModernGenerateForm
-                  onGenerate={handleGenerate}
-                  isLoading={isGenerating}
-                  memoFlowEnabled={memoFlowEnabled}
-                  onMemoFlowToggle={setMemoFlowEnabled}
-                  promotionUrl={promotionUrl}
+                {/* Stats Banner */}
+                <StatsHeroBanner 
+                  stats={{
+                    postsToday: drafts.length,
+                    scheduledCount: scheduledTweets.length,
+                    totalEngagement: 0,
+                    avgScore: drafts.length > 0 
+                      ? Math.round(drafts.reduce((acc, d) => acc + d.naturalness_score, 0) / drafts.length)
+                      : undefined
+                  }}
                 />
+
+                {/* Generate Form - Glass Card */}
+                <Card className="glass-card-green border-0 overflow-hidden">
+                  <CardContent className="p-6">
+                    <ModernGenerateForm
+                      onGenerate={handleGenerate}
+                      isLoading={isGenerating}
+                      memoFlowEnabled={memoFlowEnabled}
+                      onMemoFlowToggle={setMemoFlowEnabled}
+                      promotionUrl={promotionUrl}
+                    />
+                  </CardContent>
+                </Card>
 
                 {/* Generated Posts */}
                 {drafts.length > 0 && (
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     <div className="flex items-center justify-between">
-                      <h2 className="text-lg font-semibold text-foreground">
-                        生成された投稿 ({drafts.length}件)
+                      <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        生成された投稿
+                        <span className="text-sm font-normal text-muted-foreground">
+                          ({drafts.length}件)
+                        </span>
                       </h2>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleGenerate(currentTrend, currentPurpose, "grok")}
                         disabled={isGenerating}
+                        className="rounded-xl hover:bg-accent/80"
                       >
                         <RefreshCw className={cn("h-4 w-4 mr-2", isGenerating && "animate-spin")} />
                         再生成
                       </Button>
                     </div>
 
-                    {/* Post Cards Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {drafts.map((post, index) => (
-                        <PostGenerationCard
-                          key={post.id}
-                          post={post}
-                          index={index}
-                          onContentChange={(id, content) => handleEditContent(id, content)}
-                          onPost={() => handlePost(post.id)}
-                          onSchedule={() => setSchedulingPost(post)}
-                          onSaveDraft={() => handleSaveDraft(post.id)}
-                          isPosting={isPosting}
-                        />
-                      ))}
+                    {/* Post Cards - Horizontal Scroll on Mobile, Grid on Desktop */}
+                    <div className="relative">
+                      <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin md:grid md:grid-cols-2 lg:grid-cols-3 md:overflow-visible md:pb-0">
+                        {drafts.map((post, index) => (
+                          <div key={post.id} className="min-w-[300px] md:min-w-0">
+                            <PostGenerationCard
+                              post={post}
+                              index={index}
+                              onContentChange={(id, content) => handleEditContent(id, content)}
+                              onPost={() => handlePost(post.id)}
+                              onSchedule={() => setSchedulingPost(post)}
+                              onSaveDraft={() => handleSaveDraft(post.id)}
+                              isPosting={isPosting}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Empty State */}
+                {/* Empty State - Premium */}
                 {drafts.length === 0 && !isGenerating && (
-                  <Card className="border-dashed border-2 border-border/50 bg-transparent">
-                    <CardContent className="flex flex-col items-center justify-center py-16">
-                      <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-4">
-                        <Sparkles className="h-8 w-8 text-green-500" />
+                  <Card className="glass-card border-dashed border-2 border-border/30 overflow-hidden">
+                    <CardContent className="flex flex-col items-center justify-center py-20 relative">
+                      {/* Decorative background */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent pointer-events-none" />
+                      <div className="absolute top-10 right-10 w-32 h-32 bg-green-500/10 rounded-full blur-3xl" />
+                      <div className="absolute bottom-10 left-10 w-24 h-24 bg-emerald-500/10 rounded-full blur-3xl" />
+                      
+                      <div className="relative z-10 flex flex-col items-center">
+                        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center mb-6 shadow-xl shadow-green-500/20 logo-glow">
+                          <Sparkles className="h-10 w-10 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-foreground mb-2">
+                          AIで投稿を生成しましょう
+                        </h3>
+                        <p className="text-muted-foreground text-center max-w-md leading-relaxed">
+                          上のフォームにトレンドキーワードを入力し、目的を選択して
+                          「生成する」ボタンをクリックしてください
+                        </p>
                       </div>
-                      <h3 className="text-lg font-semibold text-foreground mb-2">
-                        投稿を生成しましょう
-                      </h3>
-                      <p className="text-muted-foreground text-center max-w-md">
-                        上のフォームにトレンドキーワードを入力し、目的を選択して
-                        「生成」ボタンをクリックしてください
-                      </p>
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Loading State */}
+                {/* Loading State - Premium Skeleton */}
                 {isGenerating && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[1, 2, 3].map(i => (
-                      <Card key={i} className="overflow-hidden">
-                        <CardHeader className="pb-2">
-                          <Skeleton className="h-4 w-24" />
+                      <Card key={i} className="glass-card overflow-hidden animate-pulse">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-2">
+                            <Skeleton className="h-6 w-6 rounded-full" />
+                            <Skeleton className="h-4 w-20" />
+                          </div>
                         </CardHeader>
-                        <CardContent className="space-y-3">
-                          <Skeleton className="h-32 w-full" />
-                          <Skeleton className="h-4 w-full" />
-                          <Skeleton className="h-8 w-32" />
+                        <CardContent className="space-y-4">
+                          <Skeleton className="h-28 w-full rounded-xl" />
+                          <div className="space-y-2">
+                            <Skeleton className="h-3 w-full" />
+                            <Skeleton className="h-3 w-4/5" />
+                          </div>
+                          <div className="flex gap-2">
+                            <Skeleton className="h-9 w-20 rounded-xl" />
+                            <Skeleton className="h-9 w-20 rounded-xl" />
+                          </div>
                         </CardContent>
                       </Card>
                     ))}

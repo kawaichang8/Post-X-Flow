@@ -1,6 +1,6 @@
 # PWA（Progressive Web App）セットアップガイド
 
-Post-X-FlowのPWA対応機能の実装内容と使用方法を説明します。
+postXflowのPWA対応機能の実装内容と使用方法を説明します。
 
 ## 実装内容
 
@@ -98,8 +98,8 @@ git push origin main
 
 ```json
 {
-  "name": "Post-X-Flow",
-  "short_name": "Post-X-Flow",
+  "name": "postXflow",
+  "short_name": "postXflow",
   "display": "standalone",
   "start_url": "/",
   "theme_color": "#000000",

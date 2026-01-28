@@ -50,7 +50,7 @@ export default function LoginPage() {
         <CardHeader>
           <CardTitle className="text-2xl">ログイン</CardTitle>
           <CardDescription>
-            Post-X-Flowアカウントにログイン
+            postXflowアカウントにログイン
           </CardDescription>
         </CardHeader>
         <CardContent>

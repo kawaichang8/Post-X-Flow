@@ -115,27 +115,40 @@ export function PostGenerationCard({
     }
   }
 
+  // Calculate progress percentage for circular indicator
+  const charProgress = Math.min((charCount / maxCharacters) * 100, 100)
+  const scoreProgress = post.naturalness_score
+  
+  const getProgressColor = () => {
+    if (isOverLimit) return "stroke-red-500"
+    if (isNearLimit) return "stroke-yellow-500"
+    return "stroke-green-500"
+  }
+
   return (
     <TooltipProvider>
-      <Card className="w-full min-w-[320px] max-w-[400px] bg-card border border-border rounded-2xl shadow-soft hover:shadow-soft-lg transition-all duration-300 card-hover overflow-hidden">
-        {/* Card Header */}
-        <CardHeader className="pb-3 pt-4 px-4">
+      <Card className="w-full min-w-[300px] max-w-[400px] glass-card border-0 rounded-2xl shadow-soft hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1 overflow-hidden group">
+        {/* Card Header - Premium */}
+        <CardHeader className="pb-3 pt-5 px-5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-green-500/20">
                 {index + 1}
               </div>
-              <span className="text-sm font-medium text-muted-foreground">
-                投稿案 {index + 1}
-              </span>
+              <div>
+                <span className="text-sm font-semibold text-foreground">
+                  投稿案 {index + 1}
+                </span>
+                <p className="text-xs text-muted-foreground">AI生成</p>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 rounded-lg"
+                    className="h-8 w-8 rounded-xl hover:bg-accent/80"
                     onClick={handleCopy}
                   >
                     {copied ? (
@@ -145,7 +158,7 @@ export function PostGenerationCard({
                     )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>コピー</TooltipContent>
+                <TooltipContent className="rounded-xl">コピー</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -153,7 +166,7 @@ export function PostGenerationCard({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-8 w-8 rounded-lg",
+                      "h-8 w-8 rounded-xl",
                       isEditing && "bg-primary/10 text-primary"
                     )}
                     onClick={handleEditToggle}
@@ -161,16 +174,16 @@ export function PostGenerationCard({
                     <Edit3 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>
-                  {isEditing ? "編集を終了" : "編集する（パーソナライズにおすすめ）"}
+                <TooltipContent className="rounded-xl">
+                  {isEditing ? "編集を終了" : "編集してパーソナライズ"}
                 </TooltipContent>
               </Tooltip>
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="px-4 pb-4 space-y-4">
-          {/* Content Area */}
+        <CardContent className="px-5 pb-5 space-y-4">
+          {/* Content Area - Premium */}
           <div className="relative">
             {isEditing ? (
               <Textarea
@@ -178,22 +191,22 @@ export function PostGenerationCard({
                 value={post.content}
                 onChange={(e) => handleContentChange(e.target.value)}
                 className={cn(
-                  "min-h-[120px] resize-none rounded-xl border-2 transition-colors",
+                  "min-h-[140px] resize-none rounded-2xl border-2 transition-all duration-300 bg-background/50",
                   isOverLimit 
-                    ? "border-red-300 dark:border-red-800 focus:border-red-500" 
-                    : "border-primary/30 focus:border-primary"
+                    ? "border-red-300 dark:border-red-700 focus:border-red-500 focus:ring-red-500/20" 
+                    : "border-primary/20 focus:border-primary focus:ring-primary/20"
                 )}
                 placeholder="投稿内容を入力..."
               />
             ) : (
               <div 
-                className="min-h-[120px] p-3 bg-muted/50 rounded-xl text-sm leading-relaxed whitespace-pre-wrap cursor-pointer hover:bg-muted/70 transition-colors"
+                className="min-h-[140px] p-4 bg-gradient-to-br from-muted/30 to-muted/50 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap cursor-pointer hover:from-muted/40 hover:to-muted/60 transition-all duration-300 border border-border/50"
                 onClick={handleEditToggle}
               >
                 {post.content.split("\n").map((line, i) => (
-                  <div key={i} className="flex gap-2">
+                  <div key={i} className="flex gap-2 py-0.5">
                     {line.match(/^[0-9０-９]+[.．]/) && (
-                      <span className="text-green-500 font-medium">•</span>
+                      <span className="w-2 h-2 mt-1.5 rounded-full bg-green-500 shrink-0" />
                     )}
                     <span>{line}</span>
                   </div>
@@ -201,15 +214,15 @@ export function PostGenerationCard({
               </div>
             )}
 
-            {/* Edit hint tooltip */}
+            {/* Edit hint - Floating */}
             {!isEditing && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button className="absolute top-2 right-2 p-1 rounded-lg bg-accent/80 hover:bg-accent transition-colors">
+                  <button className="absolute top-3 right-3 p-1.5 rounded-xl bg-background/80 backdrop-blur-sm border border-border/50 hover:bg-background transition-all duration-200 shadow-sm">
                     <Info className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="left" className="max-w-[200px]">
+                <TooltipContent side="left" className="max-w-[200px] rounded-xl">
                   <p className="text-xs">
                     クリックして編集できます。あなたの言葉でパーソナライズすると自然さが向上します。
                   </p>
@@ -245,69 +258,137 @@ export function PostGenerationCard({
             </div>
           )}
 
-          {/* Character Count & Naturalness Score */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Badge 
-                variant="secondary" 
-                className={cn(
-                  "rounded-lg px-2.5 py-1 text-xs font-medium",
-                  getCharCountColor()
-                )}
-              >
-                {charCount}/{maxCharacters}
-                {isOverLimit && (
-                  <AlertTriangle className="h-3 w-3 ml-1 inline" />
-                )}
-              </Badge>
-              {onAddMedia && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 rounded-lg text-muted-foreground"
-                      onClick={() => onAddMedia(post.id)}
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      <ImageIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>画像/動画を追加</TooltipContent>
-                </Tooltip>
-              )}
+          {/* Stats Row - Circular Progress Indicators */}
+          <div className="flex items-center justify-between py-2">
+            {/* Character Count - Circular */}
+            <div className="flex items-center gap-3">
+              <div className="relative w-12 h-12">
+                <svg className="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15"
+                    fill="none"
+                    className="stroke-muted"
+                    strokeWidth="3"
+                  />
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15"
+                    fill="none"
+                    className={cn("transition-all duration-500", getProgressColor())}
+                    strokeWidth="3"
+                    strokeDasharray={`${charProgress * 0.94} 100`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className={cn(
+                    "text-[10px] font-bold",
+                    isOverLimit ? "text-red-500" : isNearLimit ? "text-yellow-500" : "text-green-500"
+                  )}>
+                    {charCount}
+                  </span>
+                </div>
+              </div>
+              <div className="text-xs">
+                <p className="font-medium text-foreground">文字数</p>
+                <p className={cn(
+                  "text-muted-foreground",
+                  isOverLimit && "text-red-500"
+                )}>
+                  / {maxCharacters}
+                </p>
+              </div>
             </div>
 
-            <NaturalnessScore score={post.naturalness_score} size="md" />
+            {/* Naturalness Score - Circular */}
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-right">
+                <p className="font-medium text-foreground">自然さ</p>
+                <p className={cn(
+                  scoreProgress >= 80 ? "text-green-500" : 
+                  scoreProgress >= 60 ? "text-yellow-500" : "text-red-500"
+                )}>
+                  {scoreProgress >= 80 ? "高品質" : scoreProgress >= 60 ? "良好" : "要改善"}
+                </p>
+              </div>
+              <div className="relative w-12 h-12">
+                <svg className="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15"
+                    fill="none"
+                    className="stroke-muted"
+                    strokeWidth="3"
+                  />
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15"
+                    fill="none"
+                    className={cn(
+                      "transition-all duration-500",
+                      scoreProgress >= 80 ? "stroke-green-500" : 
+                      scoreProgress >= 60 ? "stroke-yellow-500" : "stroke-red-500"
+                    )}
+                    strokeWidth="3"
+                    strokeDasharray={`${scoreProgress * 0.94} 100`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className={cn(
+                    "text-[10px] font-bold",
+                    scoreProgress >= 80 ? "text-green-500" : 
+                    scoreProgress >= 60 ? "text-yellow-500" : "text-red-500"
+                  )}>
+                    {scoreProgress}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Buttons - Premium */}
           <div className="flex items-center gap-2 pt-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 rounded-xl h-10 border-border/50 hover:bg-accent/80 hover:border-border transition-all duration-200"
+                  onClick={() => onSaveDraft(post)}
+                >
+                  <Bookmark className="h-4 w-4 mr-1.5" />
+                  下書き
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="rounded-xl">後で編集するために保存</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 rounded-xl h-10 border-border/50 hover:bg-accent/80 hover:border-border transition-all duration-200"
+                  onClick={() => onSchedule(post)}
+                >
+                  <Clock className="h-4 w-4 mr-1.5" />
+                  予約
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="rounded-xl">投稿日時を設定</TooltipContent>
+            </Tooltip>
             <Button
-              variant="outline"
               size="sm"
-              className="flex-1 rounded-xl h-9"
-              onClick={() => onSaveDraft(post)}
-            >
-              <Bookmark className="h-3.5 w-3.5 mr-1.5" />
-              下書き
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 rounded-xl h-9"
-              onClick={() => onSchedule(post)}
-            >
-              <Clock className="h-3.5 w-3.5 mr-1.5" />
-              予約
-            </Button>
-            <Button
-              size="sm"
-              className="flex-1 rounded-xl h-9 bg-primary hover:bg-primary/90"
+              className="flex-1 rounded-xl h-10 btn-gradient-premium text-white font-medium shadow-lg shadow-green-500/20"
               onClick={handlePostClick}
               disabled={isPosting}
             >
-              <Send className="h-3.5 w-3.5 mr-1.5" />
+              <Send className="h-4 w-4 mr-1.5" />
               投稿
             </Button>
           </div>

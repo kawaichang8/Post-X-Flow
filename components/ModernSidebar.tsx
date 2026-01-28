@@ -129,15 +129,21 @@ export function ModernSidebar({
       <button
         onClick={onClick}
         className={cn(
-          "w-full flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200",
-          isCollapsed ? "justify-center p-3" : "px-4 py-3",
+          "w-full flex items-center gap-3 rounded-2xl text-sm font-medium transition-all duration-300 group",
+          isCollapsed ? "justify-center p-3.5" : "px-4 py-3.5",
           isActive
-            ? "bg-primary text-primary-foreground shadow-sm"
-            : "text-muted-foreground hover:bg-accent hover:text-foreground hover:scale-105"
+            ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/25 glow-ring-green"
+            : "text-muted-foreground hover:bg-accent/80 hover:text-foreground hover:scale-[1.02] hover:shadow-soft"
         )}
       >
-        <Icon className={cn("shrink-0", isCollapsed ? "h-5 w-5" : "h-4 w-4")} />
-        {!isCollapsed && <span className="truncate">{item.label}</span>}
+        <Icon className={cn(
+          "shrink-0 transition-transform duration-300",
+          isCollapsed ? "h-5 w-5" : "h-[18px] w-[18px]",
+          !isActive && "group-hover:scale-110"
+        )} />
+        {!isCollapsed && (
+          <span className="truncate">{item.label}</span>
+        )}
       </button>
     )
 
@@ -145,7 +151,7 @@ export function ModernSidebar({
       return (
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>{button}</TooltipTrigger>
-          <TooltipContent side="right" className="font-medium">
+          <TooltipContent side="right" className="font-medium rounded-xl px-3 py-2">
             {item.label}
           </TooltipContent>
         </Tooltip>
@@ -184,40 +190,43 @@ export function ModernSidebar({
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed left-0 top-0 h-full bg-card border-r border-border z-40 transition-all duration-300 flex flex-col",
-          isCollapsed ? "w-[72px]" : "w-64",
+          "fixed left-0 top-0 h-full sidebar-glass border-r border-border/50 z-40 transition-all duration-300 flex flex-col",
+          isCollapsed ? "w-[80px]" : "w-[280px]",
           "lg:translate-x-0",
           isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        {/* Logo/Header */}
+        {/* Logo/Header - Premium */}
         <div className={cn(
-          "flex items-center border-b border-border shrink-0",
-          isCollapsed ? "justify-center p-4" : "justify-between px-4 py-4"
+          "flex items-center border-b border-border/50 shrink-0",
+          isCollapsed ? "justify-center p-4" : "justify-between px-5 py-5"
         )}>
           {!isCollapsed ? (
             <>
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                  <Sparkles className="h-4 w-4 text-white" />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-green-400 via-green-500 to-emerald-600 flex items-center justify-center logo-glow">
+                  <Sparkles className="h-5 w-5 text-white" />
                 </div>
-                <span className="font-bold text-lg">FreeXBoost</span>
+                <div>
+                  <span className="font-bold text-lg bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent">postXflow</span>
+                  <p className="text-[10px] text-muted-foreground -mt-0.5">X Growth Automation</p>
+                </div>
               </div>
               <button
                 onClick={() => setIsCollapsed(true)}
-                className="hidden lg:flex p-1.5 rounded-lg hover:bg-accent transition-colors"
+                className="hidden lg:flex p-2 rounded-xl hover:bg-accent/80 transition-all duration-200 hover:scale-105"
               >
                 <ChevronLeft className="h-4 w-4 text-muted-foreground" />
               </button>
             </>
           ) : (
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                <Sparkles className="h-5 w-5 text-white" />
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-400 via-green-500 to-emerald-600 flex items-center justify-center logo-glow">
+                <Sparkles className="h-6 w-6 text-white" />
               </div>
               <button
                 onClick={() => setIsCollapsed(false)}
-                className="hidden lg:flex p-1.5 rounded-lg hover:bg-accent transition-colors"
+                className="hidden lg:flex p-2 rounded-xl hover:bg-accent/80 transition-all duration-200 hover:scale-105"
               >
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </button>

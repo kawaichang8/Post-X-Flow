@@ -1,6 +1,6 @@
 {
-  "name": "Post-X-Flow",
-  "short_name": "Post-X-Flow",
+  "name": "postXflow",
+  "short_name": "postXflow",
   "description": "X（Twitter）成長自動化ツール - AIツイート生成とスケジュール投稿",
   "start_url": "/",
   "display": "standalone",

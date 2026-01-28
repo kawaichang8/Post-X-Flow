@@ -28,7 +28,7 @@ export default function HelpPage() {
                 ヘルプ・使い方
               </h1>
               <p className="text-muted-foreground">
-                Post-X-Flowの使い方をご案内します
+                postXflowの使い方をご案内します
               </p>
             </div>
           </div>
@@ -81,7 +81,7 @@ export default function HelpPage() {
               <HelpCircle className="h-5 w-5" />
               主な機能
             </CardTitle>
-            <CardDescription>Post-X-Flowの機能一覧</CardDescription>
+            <CardDescription>postXflowの機能一覧</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

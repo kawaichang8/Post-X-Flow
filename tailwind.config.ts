@@ -43,7 +43,7 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        // FreeXBoost Green Theme Colors
+        // postXflow Green Theme Colors
         brand: {
           50: "#f0fdf4",
           100: "#dcfce7",
@@ -68,7 +68,11 @@ const config: Config = {
       boxShadow: {
         "soft": "0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)",
         "soft-lg": "0 10px 40px -3px rgba(0, 0, 0, 0.1), 0 4px 20px -2px rgba(0, 0, 0, 0.05)",
+        "soft-xl": "0 20px 60px -10px rgba(0, 0, 0, 0.12), 0 8px 30px -5px rgba(0, 0, 0, 0.08)",
         "glow-green": "0 0 20px rgba(34, 197, 94, 0.3)",
+        "glow-green-lg": "0 0 40px rgba(34, 197, 94, 0.4), 0 0 80px rgba(34, 197, 94, 0.2)",
+        "inner-soft": "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)",
+        "card-hover": "0 20px 50px -12px rgba(0, 0, 0, 0.15)",
       },
       animation: {
         "fade-in": "fadeIn 0.3s ease-out",

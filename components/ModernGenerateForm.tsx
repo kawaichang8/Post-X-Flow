@@ -71,29 +71,22 @@ export function ModernGenerateForm({
 
   return (
     <TooltipProvider>
-      <Card className="rounded-2xl border border-border shadow-soft overflow-hidden">
-        {/* Header with gradient */}
-        <CardHeader className="bg-gradient-to-r from-green-50 to-white dark:from-green-950/30 dark:to-card border-b border-border">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                <Sparkles className="h-5 w-5 text-white" />
-              </div>
-              投稿を作成
-            </CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="rounded-lg text-muted-foreground"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              <Settings2 className="h-4 w-4 mr-1.5" />
-              詳細設定
-            </Button>
-          </div>
-        </CardHeader>
+      <div className="space-y-6">
+        {/* Inline header with advanced toggle */}
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-muted-foreground">投稿設定</h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-xl text-muted-foreground hover:bg-accent/80 h-8"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            <Settings2 className="h-4 w-4 mr-1.5" />
+            詳細設定
+          </Button>
+        </div>
 
-        <CardContent className="p-6">
+        <div>
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Trend Input */}
             <div className="space-y-2" id="trend-input">
@@ -212,32 +205,33 @@ export function ModernGenerateForm({
               </div>
             )}
 
-            {/* Generate Button */}
+            {/* Generate Button - Premium */}
             <Button
               id="generate-button"
               type="submit"
               disabled={isLoading || !trend.trim()}
               className={cn(
-                "w-full h-12 rounded-xl text-base font-medium transition-all",
-                "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700",
-                "shadow-lg hover:shadow-glow-green"
+                "w-full h-14 rounded-2xl text-base font-semibold transition-all duration-300",
+                "btn-gradient-premium text-white",
+                "shadow-xl shadow-green-500/25 hover:shadow-green-500/40",
+                "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
               )}
             >
               {isLoading ? (
                 <>
                   <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  生成中...
+                  AIが生成中...
                 </>
               ) : (
                 <>
                   <Sparkles className="h-5 w-5 mr-2" />
-                  AIで投稿を生成
+                  生成する
                 </>
               )}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </TooltipProvider>
   )
 }

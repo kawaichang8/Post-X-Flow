@@ -86,7 +86,7 @@ export default function SignupPage() {
         <CardHeader>
           <CardTitle className="text-2xl">新規登録</CardTitle>
           <CardDescription>
-            Post-X-Flowアカウントを作成
+            postXflowアカウントを作成
           </CardDescription>
         </CardHeader>
         <CardContent>

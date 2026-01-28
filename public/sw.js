@@ -1,7 +1,7 @@
-// Service Worker for Post-X-Flow PWA
+// Service Worker for postXflow PWA
 // オフライン対応とキャッシュ管理
 
-const CACHE_NAME = 'post-x-flow-v1'
+const CACHE_NAME = 'postxflow-v1'
 const OFFLINE_PAGE = '/offline'
 
 // インストール時にキャッシュを作成

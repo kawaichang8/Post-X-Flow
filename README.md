@@ -1,4 +1,4 @@
-# Post-X-Flow (FreeXBoost)
+# postXflow
 
 X（Twitter）成長自動化ツール。X-boost級の機能を実装したセルフホスト対応ツール。
 

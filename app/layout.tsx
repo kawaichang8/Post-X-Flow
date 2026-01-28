@@ -8,13 +8,13 @@ import { OfflineIndicator } from "@/components/OfflineIndicator";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "FreeXBoost - X（Twitter）成長自動化ツール",
+  title: "postXflow - X（Twitter）成長自動化ツール",
   description: "AIツイート生成とスケジュール投稿でX（Twitter）の成長を自動化",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "FreeXBoost",
+    title: "postXflow",
   },
   icons: {
     icon: [
@@ -49,7 +49,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#052e16" media="(prefers-color-scheme: dark)" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="FreeXBoost" />
+        <meta name="apple-mobile-web-app-title" content="postXflow" />
         {/* Initialize dark mode before render to prevent flash */}
         <script
           dangerouslySetInnerHTML={{
