@@ -20,7 +20,8 @@ import {
   Sparkles,
   Crown,
   Zap,
-  Megaphone
+  Megaphone,
+  Quote
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
@@ -118,6 +119,12 @@ export function ModernSidebar({
   ]
 
   const bottomNavItems = [
+    {
+      id: "inspiration",
+      label: "インスピレーション",
+      icon: Quote,
+      onClick: () => router.push("/inspiration"),
+    },
     {
       id: "promotion",
       label: "宣伝設定",
