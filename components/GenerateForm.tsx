@@ -43,7 +43,7 @@ const PURPOSE_CATEGORIES = [
   {
     category: "プロモーション",
     options: [
-      { value: "App promotion - MemoFlow", label: "アプリ宣伝 - MemoFlow", description: "MemoFlowアプリの宣伝" },
+      { value: "App promotion", label: "アプリ宣伝", description: "アプリ・サービスの宣伝" },
       { value: "Product launch", label: "製品リリース", description: "新製品・新機能の発表" },
       { value: "Event promotion", label: "イベント告知", description: "イベントやセミナーの告知" },
     ],
