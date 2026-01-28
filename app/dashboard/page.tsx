@@ -134,7 +134,7 @@ function NewDashboardContent() {
 
   // Load scheduled tweets when calendar view is active
   useEffect(() => {
-    if (activeView === "calendar" && user) {
+    if ((activeView === "calendar" || activeView === "scheduled") && user) {
       getScheduledTweets(user.id).then(setScheduledTweets)
     }
   }, [activeView, user])
@@ -580,8 +580,8 @@ function NewDashboardContent() {
               </>
             )}
 
-            {/* Calendar View */}
-            {activeView === "calendar" && user && (
+            {/* Calendar View (sidebar uses id "scheduled") */}
+            {(activeView === "calendar" || activeView === "scheduled") && user && (
               <EnhancedCalendar
                 scheduledPosts={scheduledTweets.map((p) => ({
                   id: p.id,
