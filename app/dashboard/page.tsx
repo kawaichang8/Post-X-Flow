@@ -40,8 +40,12 @@ import { EnhancedCalendar } from "@/components/EnhancedCalendar"
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
 import { cn } from "@/lib/utils"
 import { StatsHeroBanner } from "@/components/StatsHeroBanner"
+import { UpgradeBanner } from "@/components/UpgradeBanner"
+import { UsageLimitWarning } from "@/components/ProFeatureLock"
+import { useSubscription } from "@/hooks/useSubscription"
+import { incrementGenerationCount } from "@/app/actions-subscription"
 import { Switch } from "@/components/ui/switch"
-import { Loader2, RefreshCw, Sparkles, Link2, Moon, Sun } from "lucide-react"
+import { Loader2, RefreshCw, Sparkles, Link2, Moon, Sun, Crown } from "lucide-react"
 
 interface PostHistoryItem {
   id: string
@@ -109,6 +113,29 @@ function NewDashboardContent() {
   const [schedulingPost, setSchedulingPost] = useState<GeneratedPost | null>(null)
   const [scheduleDate, setScheduleDate] = useState("")
 
+  // Subscription state
+  const {
+    isPro,
+    isTrialActive,
+    trialDaysRemaining,
+    canGenerate,
+    generationsRemaining,
+    generationsLimit,
+    startCheckout,
+    refresh: refreshSubscription,
+  } = useSubscription(user?.id || null)
+
+  // Handle upgrade success/cancel from URL params
+  useEffect(() => {
+    const upgrade = searchParams.get("upgrade")
+    if (upgrade === "success") {
+      showToast("Proプランへのアップグレードが完了しました！", "success")
+      refreshSubscription()
+    } else if (upgrade === "cancelled") {
+      showToast("アップグレードがキャンセルされました", "info")
+    }
+  }, [searchParams, showToast, refreshSubscription])
+
   // Load scheduled tweets when calendar view is active
   useEffect(() => {
     if (activeView === "calendar" && user) {
@@ -175,11 +202,23 @@ function NewDashboardContent() {
   const handleGenerate = async (trend: string, purpose: string, aiProvider: string) => {
     if (!user) return
     
+    // Check generation limit for free users
+    if (!canGenerate) {
+      showToast("本日の生成上限に達しました。Proプランにアップグレードすると無制限に生成できます。", "error")
+      return
+    }
+    
     setIsGenerating(true)
     setCurrentTrend(trend)
     setCurrentPurpose(purpose)
     
     try {
+      // Increment usage count for free users
+      if (!isPro) {
+        await incrementGenerationCount(user.id)
+        refreshSubscription() // Refresh to update remaining count
+      }
+      
       const draftsResult = await generatePostDrafts(trend, purpose, { aiProvider: aiProvider as "grok" | "claude" })
       const generatedPosts: GeneratedPost[] = draftsResult.map((draft: PostDraft, index: number) => ({
         id: `draft-${Date.now()}-${index}`,
@@ -379,6 +418,10 @@ function NewDashboardContent() {
           onLogout={handleLogout}
           activeView={activeView}
           onNavigate={handleNavigate}
+          isPro={isPro}
+          isTrialActive={isTrialActive}
+          trialDaysRemaining={trialDaysRemaining}
+          onUpgrade={startCheckout}
         />
 
         {/* Main Content */}
@@ -433,6 +476,25 @@ function NewDashboardContent() {
                       : undefined
                   }}
                 />
+
+                {/* Upgrade Banner for Free/Trial Users */}
+                {!isPro && (
+                  <UpgradeBanner
+                    trialDaysRemaining={trialDaysRemaining}
+                    generationsRemaining={generationsRemaining === Infinity ? 999 : generationsRemaining}
+                    generationsLimit={generationsLimit === Infinity ? 999 : generationsLimit}
+                    onUpgrade={startCheckout}
+                    variant={isTrialActive ? "compact" : "default"}
+                  />
+                )}
+
+                {/* Usage Limit Warning */}
+                {!isPro && (
+                  <UsageLimitWarning 
+                    remaining={generationsRemaining === Infinity ? 999 : generationsRemaining} 
+                    limit={generationsLimit === Infinity ? 999 : generationsLimit} 
+                  />
+                )}
 
                 {/* Generate Form - Glass Card */}
                 <Card className="glass-card-green border-0 overflow-hidden">

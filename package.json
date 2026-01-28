@@ -36,6 +36,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tooltip": "1.0.7",
     "@sentry/nextjs": "^10.36.0",
+    "@stripe/stripe-js": "^8.7.0",
     "@supabase/supabase-js": "2.39.0",
     "class-variance-authority": "0.7.0",
     "clsx": "2.1.0",
@@ -49,6 +50,7 @@
     "react-dom": "19.2.3",
     "react-player": "^3.4.0",
     "server-only": "0.0.1",
+    "stripe": "^20.3.0",
     "tailwind-merge": "2.2.0",
     "twitter-api-v2": "1.15.0",
     "workbox-window": "^7.0.0"

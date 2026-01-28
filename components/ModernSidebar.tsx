@@ -17,7 +17,9 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Crown,
+  Zap
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
@@ -35,6 +37,11 @@ interface ModernSidebarProps {
   onLogout?: () => void
   activeView?: string
   onNavigate?: (view: string) => void
+  // Subscription props
+  isPro?: boolean
+  isTrialActive?: boolean
+  trialDaysRemaining?: number
+  onUpgrade?: () => void
 }
 
 export function ModernSidebar({
@@ -47,6 +54,10 @@ export function ModernSidebar({
   onLogout,
   activeView = "create",
   onNavigate,
+  isPro = false,
+  isTrialActive = false,
+  trialDaysRemaining = 0,
+  onUpgrade,
 }: ModernSidebarProps) {
   const router = useRouter()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
@@ -357,6 +368,50 @@ export function ModernSidebar({
                 </svg>
                 X連携
               </Button>
+            )}
+          </div>
+        )}
+
+        {/* Upgrade Button for Free Users */}
+        {!isPro && onUpgrade && (
+          <div className={cn("p-3 border-t border-border", isCollapsed && "flex justify-center")}>
+            {isCollapsed ? (
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={onUpgrade}
+                    className="w-10 h-10 p-0 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                    size="icon"
+                  >
+                    <Crown className="h-5 w-5 text-white" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="bg-gradient-to-r from-amber-500 to-orange-500 text-white border-0">
+                  {isTrialActive ? `トライアル残り${trialDaysRemaining}日` : "Proにアップグレード"}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <Crown className="h-4 w-4 text-amber-500" />
+                  <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                    {isTrialActive ? "トライアル中" : "無料プラン"}
+                  </span>
+                </div>
+                {isTrialActive && (
+                  <p className="text-xs text-muted-foreground mb-3">
+                    残り{trialDaysRemaining}日
+                  </p>
+                )}
+                <Button
+                  onClick={onUpgrade}
+                  size="sm"
+                  className="w-full h-8 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-medium"
+                >
+                  <Zap className="h-3 w-3 mr-1" />
+                  Proにアップグレード
+                </Button>
+              </div>
             )}
           </div>
         )}
