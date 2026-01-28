@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Sparkles,
   Crown,
-  Zap
+  Zap,
+  Megaphone
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
@@ -117,6 +118,12 @@ export function ModernSidebar({
   ]
 
   const bottomNavItems = [
+    {
+      id: "promotion",
+      label: "宣伝設定",
+      icon: Megaphone,
+      onClick: () => router.push("/settings/promotion"),
+    },
     {
       id: "settings",
       label: "設定",

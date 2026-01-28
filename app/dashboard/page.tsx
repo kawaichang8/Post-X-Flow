@@ -44,8 +44,8 @@ import { UpgradeBanner } from "@/components/UpgradeBanner"
 import { UsageLimitWarning } from "@/components/ProFeatureLock"
 import { useSubscription } from "@/hooks/useSubscription"
 import { incrementGenerationCount } from "@/app/actions-subscription"
-import { Switch } from "@/components/ui/switch"
-import { Loader2, RefreshCw, Sparkles, Link2, Moon, Sun, Crown } from "lucide-react"
+import { Loader2, RefreshCw, Sparkles } from "lucide-react"
+import Link from "next/link"
 
 interface PostHistoryItem {
   id: string
@@ -94,10 +94,6 @@ function NewDashboardContent() {
   const [isPosting, setIsPosting] = useState(false)
   const [currentTrend, setCurrentTrend] = useState("")
   const [currentPurpose, setCurrentPurpose] = useState("")
-  
-  // MemoFlow state
-  const [memoFlowEnabled, setMemoFlowEnabled] = useState(false)
-  const [promotionUrl, setPromotionUrl] = useState("")
   
   // View state
   const [activeView, setActiveView] = useState("create")
@@ -219,12 +215,13 @@ function NewDashboardContent() {
         refreshSubscription() // Refresh to update remaining count
       }
       
-      const draftsResult = await generatePostDrafts(trend, purpose, { aiProvider: aiProvider as "grok" | "claude" })
+      const draftsResult = await generatePostDrafts(trend, purpose, {
+        userId: user.id,
+        aiProvider: aiProvider as "grok" | "claude",
+      })
       const generatedPosts: GeneratedPost[] = draftsResult.map((draft: PostDraft, index: number) => ({
         id: `draft-${Date.now()}-${index}`,
-        content: memoFlowEnabled && promotionUrl 
-          ? `${draft.text}\n\n${promotionUrl}` 
-          : draft.text,
+        content: draft.text,
         naturalness_score: draft.naturalnessScore,
       }))
       setDrafts(generatedPosts)
@@ -431,38 +428,17 @@ function NewDashboardContent() {
             {/* Create View */}
             {activeView === "create" && (
               <>
-                {/* Premium Header with MemoFlow Toggle */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-500/20">
-                        <Sparkles className="h-5 w-5 text-white" />
-                      </div>
-                      <span className="bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">投稿を作成</span>
-                    </h1>
-                    <p className="text-muted-foreground mt-2 text-sm md:text-base">
-                      AIを活用してエンゲージメントの高い投稿を生成
-                    </p>
-                  </div>
-                  
-                  {/* MemoFlow Toggle - Premium */}
-                  <div className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all duration-300",
-                    memoFlowEnabled 
-                      ? "border-green-500/30 bg-green-50/50 dark:bg-green-950/30" 
-                      : "border-border bg-card/50"
-                  )}>
-                    <Link2 className={cn(
-                      "h-4 w-4 transition-colors",
-                      memoFlowEnabled ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
-                    )} />
-                    <span className="text-sm font-medium">MemoFlow</span>
-                    <Switch
-                      checked={memoFlowEnabled}
-                      onCheckedChange={setMemoFlowEnabled}
-                      className="data-[state=checked]:bg-green-500"
-                    />
-                  </div>
+                {/* Premium Header */}
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-500/20">
+                      <Sparkles className="h-5 w-5 text-white" />
+                    </div>
+                    <span className="bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">投稿を作成</span>
+                  </h1>
+                  <p className="text-muted-foreground mt-2 text-sm md:text-base">
+                    AIを活用してエンゲージメントの高い投稿を生成
+                  </p>
                 </div>
 
                 {/* Stats Banner */}
@@ -502,9 +478,6 @@ function NewDashboardContent() {
                     <ModernGenerateForm
                       onGenerate={handleGenerate}
                       isLoading={isGenerating}
-                      memoFlowEnabled={memoFlowEnabled}
-                      onMemoFlowToggle={setMemoFlowEnabled}
-                      promotionUrl={promotionUrl}
                     />
                   </CardContent>
                 </Card>
@@ -664,21 +637,18 @@ function NewDashboardContent() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between p-4 rounded-xl border">
+                  <Link
+                    href="/settings/promotion"
+                    className="flex items-center justify-between p-4 rounded-xl border hover:bg-muted/50 transition-colors"
+                  >
                     <div>
-                      <p className="font-medium">MemoFlow プロモーションURL</p>
+                      <p className="font-medium">宣伝設定</p>
                       <p className="text-sm text-muted-foreground">
-                        自動で投稿に追加するリンク
+                        生成投稿に自分の商品・リンクを誘導する文言を追加
                       </p>
                     </div>
-                    <input
-                      type="url"
-                      value={promotionUrl}
-                      onChange={(e) => setPromotionUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="w-64 px-3 py-2 rounded-lg border bg-background"
-                    />
-                  </div>
+                    <span className="text-sm text-muted-foreground">→</span>
+                  </Link>
                 </CardContent>
               </Card>
             )}

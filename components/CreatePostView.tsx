@@ -53,9 +53,6 @@ interface CreatePostViewProps {
     like_count: number
     retweet_count: number
   }>
-  memoFlowEnabled?: boolean
-  onMemoFlowToggle?: (enabled: boolean) => void
-  promotionUrl?: string
 }
 
 export function CreatePostView({
@@ -71,9 +68,6 @@ export function CreatePostView({
   optimalTimes = [],
   onSelectOptimalTime,
   highEngagementPosts = [],
-  memoFlowEnabled = false,
-  onMemoFlowToggle,
-  promotionUrl,
 }: CreatePostViewProps) {
   return (
     <TooltipProvider>
@@ -96,9 +90,6 @@ export function CreatePostView({
             <ModernGenerateForm
               onGenerate={onGenerate}
               isLoading={isGenerating}
-              memoFlowEnabled={memoFlowEnabled}
-              onMemoFlowToggle={onMemoFlowToggle}
-              promotionUrl={promotionUrl}
             />
 
             {/* Generated Posts */}

@@ -2,6 +2,7 @@
 
 import { generatePosts, PostDraft, improveTweetText, ImprovedText } from "@/lib/ai-generator"
 import { createServerClient } from "@/lib/supabase"
+import { getPromotionSettingsForGeneration } from "@/app/actions-promotion"
 import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place } from "@/lib/x-post"
 import { generateEyeCatchImage, generateImageVariations, downloadImageAsBuffer, GeneratedImage } from "@/lib/image-generator"
 import { classifyError, logErrorToSentry, AppError, ErrorType } from "@/lib/error-handler"
@@ -33,10 +34,13 @@ interface PostHistoryItem {
   } | null
 }
 
+const PROMOTION_NATURALNESS_PENALTY = 3
+
 export async function generatePostDrafts(
   trend: string,
   purpose: string,
   options?: {
+    userId?: string
     aiProvider?: 'grok' | 'claude'
     enableHumor?: boolean
     enableRealtimeKnowledge?: boolean
@@ -47,12 +51,26 @@ export async function generatePostDrafts(
     const drafts = await generatePosts({ 
       trend, 
       purpose,
-      aiProvider: options?.aiProvider || 'grok', // デフォルト: Grok
+      aiProvider: options?.aiProvider || 'grok',
       enableHumor: options?.enableHumor || false,
       enableRealtimeKnowledge: options?.enableRealtimeKnowledge || false,
       realtimeTrends: options?.realtimeTrends || []
     })
-    return drafts
+
+    const promo = options?.userId
+      ? await getPromotionSettingsForGeneration(options.userId)
+      : null
+
+    if (!promo?.enabled || !promo.link_url) {
+      return drafts
+    }
+
+    const suffix = promo.template.replace(/\[link\]/g, promo.link_url).trim()
+    return drafts.map((d) => {
+      const text = `${d.text}\n\n${suffix}`
+      const naturalnessScore = Math.max(0, (d.naturalnessScore ?? 0) - PROMOTION_NATURALNESS_PENALTY)
+      return { ...d, text, naturalnessScore }
+    })
   } catch (error) {
     console.error("Error generating drafts:", error)
     throw error

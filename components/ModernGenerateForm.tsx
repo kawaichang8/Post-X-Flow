@@ -18,7 +18,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { MemoFlowToggle } from "@/components/MemoFlowToggle"
 import { cn } from "@/lib/utils"
 import {
   Sparkles,
@@ -33,9 +32,6 @@ import {
 interface ModernGenerateFormProps {
   onGenerate: (trend: string, purpose: string, aiProvider: string) => Promise<void>
   isLoading?: boolean
-  memoFlowEnabled?: boolean
-  onMemoFlowToggle?: (enabled: boolean) => void
-  promotionUrl?: string
 }
 
 const purposes = [
@@ -54,9 +50,6 @@ const aiProviders = [
 export function ModernGenerateForm({
   onGenerate,
   isLoading = false,
-  memoFlowEnabled = false,
-  onMemoFlowToggle,
-  promotionUrl,
 }: ModernGenerateFormProps) {
   const [trend, setTrend] = useState("")
   const [purpose, setPurpose] = useState("engagement")
@@ -194,14 +187,6 @@ export function ModernGenerateForm({
                   </div>
                 </div>
 
-                {/* MemoFlow Toggle */}
-                {onMemoFlowToggle && (
-                  <MemoFlowToggle
-                    enabled={memoFlowEnabled}
-                    onToggle={onMemoFlowToggle}
-                    promotionUrl={promotionUrl}
-                  />
-                )}
               </div>
             )}
 

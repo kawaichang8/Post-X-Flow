@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, User, Bell, Shield, Trash2 } from "lucide-react"
+import Link from "next/link"
+import { ArrowLeft, User, Bell, Shield, Trash2, Megaphone } from "lucide-react"
 import { useToast } from "@/components/ui/toast"
 
 interface User {
@@ -162,6 +163,26 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Promotion Settings */}
+        <Link href="/settings/promotion">
+          <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-950 transition-colors duration-200 animate-fade-in cursor-pointer">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Megaphone className="h-5 w-5" />
+                宣伝設定
+              </CardTitle>
+              <CardDescription>
+                生成投稿に自分の商品・リンクを誘導する文言を追加（Pro）
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                宣伝ON、商品名・URL・誘導文テンプレートを設定 → 投稿作成
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
 
         {/* Notification Settings */}
         <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-950 transition-colors duration-200 animate-fade-in">
