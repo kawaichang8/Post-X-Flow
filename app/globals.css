@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================
+   FreeXBoost - Modern Green Theme
+   ============================================ */
+
 /* PWAアニメーション */
 @keyframes slide-up {
   from {
@@ -33,49 +37,65 @@
   animation: slide-down 0.3s ease-out;
 }
 
+/* ============================================
+   Light Mode - Green Accented Theme
+   ============================================ */
 :root {
   --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  --foreground: 150 10% 10%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
+  --card-foreground: 150 10% 10%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
-  --radius: 0.5rem;
+  --popover-foreground: 150 10% 10%;
+  /* Green Primary */
+  --primary: 142 76% 36%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 140 30% 96%;
+  --secondary-foreground: 142 76% 30%;
+  --muted: 140 20% 96%;
+  --muted-foreground: 150 10% 45%;
+  --accent: 140 30% 94%;
+  --accent-foreground: 142 76% 30%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 140 20% 90%;
+  --input: 140 20% 90%;
+  --ring: 142 76% 36%;
+  --radius: 0.75rem;
+  
+  /* Custom gradient backgrounds */
+  --gradient-start: 140 60% 98%;
+  --gradient-end: 0 0% 100%;
 }
 
+/* ============================================
+   Dark Mode - Green Accented Theme
+   ============================================ */
 .dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
+  --background: 150 30% 5%;
+  --foreground: 140 10% 95%;
+  --card: 150 25% 8%;
+  --card-foreground: 140 10% 95%;
+  --popover: 150 25% 8%;
+  --popover-foreground: 140 10% 95%;
+  /* Green Primary */
+  --primary: 142 71% 45%;
+  --primary-foreground: 150 30% 5%;
+  --secondary: 150 20% 15%;
+  --secondary-foreground: 142 71% 70%;
+  --muted: 150 15% 15%;
+  --muted-foreground: 140 10% 65%;
+  --accent: 150 20% 18%;
+  --accent-foreground: 142 71% 70%;
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 150 15% 18%;
+  --input: 150 15% 18%;
+  --ring: 142 71% 45%;
+  
+  /* Custom gradient backgrounds */
+  --gradient-start: 150 30% 8%;
+  --gradient-end: 150 30% 5%;
 }
 
 * {
@@ -95,6 +115,235 @@ body {
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
+}
+
+/* ============================================
+   FreeXBoost Custom Components
+   ============================================ */
+
+/* Gradient backgrounds */
+.bg-gradient-brand {
+  background: linear-gradient(135deg, hsl(var(--gradient-start)) 0%, hsl(var(--gradient-end)) 100%);
+}
+
+.bg-gradient-brand-subtle {
+  background: linear-gradient(to right, hsl(140 60% 98%) 0%, hsl(0 0% 100%) 100%);
+}
+
+.dark .bg-gradient-brand-subtle {
+  background: linear-gradient(to right, hsl(150 30% 8%) 0%, hsl(150 30% 5%) 100%);
+}
+
+/* Glass effect cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass-card {
+  background: rgba(20, 20, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Hover scale effect */
+.hover-scale {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.hover-scale:hover {
+  transform: scale(1.02);
+}
+
+.hover-scale-sm:hover {
+  transform: scale(1.05);
+}
+
+/* Green glow effect */
+.glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.dark .glow-green {
+  box-shadow: 0 0 25px rgba(34, 197, 94, 0.4);
+}
+
+/* Progress bar animations */
+.progress-bar-animated {
+  transition: width 0.5s ease-out;
+}
+
+/* Character count badges */
+.char-count-normal {
+  @apply bg-muted text-muted-foreground;
+}
+
+.char-count-warning {
+  @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300;
+}
+
+.char-count-danger {
+  @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300;
+}
+
+/* Sidebar styling */
+.sidebar-item {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200;
+}
+
+.sidebar-item:hover {
+  @apply bg-accent scale-105;
+}
+
+.sidebar-item.active {
+  @apply bg-primary/10 text-primary;
+}
+
+/* Card hover effects */
+.card-hover {
+  @apply transition-all duration-200;
+}
+
+.card-hover:hover {
+  @apply shadow-soft-lg -translate-y-1;
+}
+
+/* Onboarding overlay */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 9998;
+}
+
+.onboarding-spotlight {
+  position: fixed;
+  z-index: 9999;
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7), 0 0 20px rgba(34, 197, 94, 0.5);
+}
+
+.onboarding-tooltip {
+  position: fixed;
+  z-index: 10000;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 320px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.dark .onboarding-tooltip {
+  background: hsl(150 25% 12%);
+}
+
+/* Naturalness score colors */
+.score-excellent { @apply text-green-600 dark:text-green-400; }
+.score-good { @apply text-emerald-600 dark:text-emerald-400; }
+.score-fair { @apply text-yellow-600 dark:text-yellow-400; }
+.score-poor { @apply text-red-600 dark:text-red-400; }
+
+/* Calendar scheduled cells */
+.calendar-scheduled {
+  @apply bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded-lg;
+}
+
+/* Input focus with green ring */
+.input-focus-green:focus {
+  @apply ring-2 ring-primary/50 border-primary;
+}
+
+/* Button variants */
+.btn-gradient-green {
+  @apply bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium;
+  @apply hover:from-green-600 hover:to-emerald-600;
+  @apply transition-all duration-200;
+}
+
+/* Media preview container */
+.media-preview-container {
+  @apply relative overflow-hidden rounded-xl bg-muted;
+  aspect-ratio: 16 / 9;
+}
+
+/* Numbered list with green dots */
+.numbered-list-green li::marker {
+  @apply text-green-500;
+}
+
+/* Tooltip arrow */
+.tooltip-arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Thin scrollbar for large content areas */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Animate-in utilities */
+@keyframes animate-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: animate-in 0.2s ease-out;
+}
+
+/* Slide-in utilities */
+@keyframes slide-in-from-top-5 {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in-from-top-5 {
+  animation: slide-in-from-top-5 0.3s ease-out;
 }
 
 /* Custom animations - X/Grok style smooth transitions */

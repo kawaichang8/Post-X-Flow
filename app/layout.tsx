@@ -8,13 +8,13 @@ import { OfflineIndicator } from "@/components/OfflineIndicator";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Post-X-Flow - X（Twitter）成長自動化ツール",
+  title: "FreeXBoost - X（Twitter）成長自動化ツール",
   description: "AIツイート生成とスケジュール投稿でX（Twitter）の成長を自動化",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Post-X-Flow",
+    title: "FreeXBoost",
   },
   icons: {
     icon: [
@@ -33,7 +33,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#000000",
+  themeColor: "#16a34a",
 };
 
 export default function RootLayout({
@@ -42,13 +42,30 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" content="#16a34a" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#052e16" media="(prefers-color-scheme: dark)" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Post-X-Flow" />
+        <meta name="apple-mobile-web-app-title" content="FreeXBoost" />
+        {/* Initialize dark mode before render to prevent flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var savedTheme = localStorage.getItem('freexboost_theme');
+                  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                  if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                    document.documentElement.classList.add('dark');
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body className={inter.className}>
         <ToastProvider>
