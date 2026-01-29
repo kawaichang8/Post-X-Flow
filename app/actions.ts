@@ -647,21 +647,31 @@ export async function getTrends(accessToken: string): Promise<Trend[]> {
   return trends
 }
 
-// Get trending topics for the current user (uses default or specified account token server-side)
-// Throws when latest trends cannot be fetched (no static fallback).
-export async function getTrendsForUser(userId: string, accountId?: string): Promise<Trend[]> {
-  const supabaseAdmin = createServerClient()
-  const base = supabaseAdmin
-    .from("user_twitter_tokens")
-    .select("access_token")
-    .eq("user_id", userId)
-  const { data, error } = accountId
-    ? await base.eq("id", accountId).maybeSingle()
-    : await base.eq("is_default", true).maybeSingle()
-  if (error || !data?.access_token) {
-    throw new Error("X連携アカウントのトークンを取得できませんでした。X連携をやり直してください。")
+// Get trending topics for the current user (uses default or specified account token server-side).
+// Returns { trends, error? } so the client gets a 200 with error message instead of 500.
+export async function getTrendsForUser(
+  userId: string,
+  accountId?: string
+): Promise<{ trends: Trend[]; error?: string }> {
+  try {
+    const supabaseAdmin = createServerClient()
+    const base = supabaseAdmin
+      .from("user_twitter_tokens")
+      .select("access_token")
+      .eq("user_id", userId)
+    const { data, error } = accountId
+      ? await base.eq("id", accountId).maybeSingle()
+      : await base.eq("is_default", true).maybeSingle()
+    if (error || !data?.access_token) {
+      return { trends: [], error: "X連携アカウントのトークンを取得できませんでした。X連携をやり直してください。" }
+    }
+    const trends = await getTrends(data.access_token)
+    return { trends }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "トレンドの取得に失敗しました。"
+    console.error("[getTrendsForUser]", message, e)
+    return { trends: [], error: message }
   }
-  return await getTrends(data.access_token)
 }
 
 // Get unique purposes used by a user (for suggestions)

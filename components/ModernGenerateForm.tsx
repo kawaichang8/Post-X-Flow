@@ -73,9 +73,11 @@ export function ModernGenerateForm({
     setIsLoadingTrends(true)
     setTrends([])
     try {
-      const list = await getTrendsForUser(userId, selectedAccountId ?? undefined)
-      setTrends(list)
-      if (list.length === 0 && onTrendsError) {
+      const result = await getTrendsForUser(userId, selectedAccountId ?? undefined)
+      setTrends(result.trends)
+      if (result.error && onTrendsError) {
+        onTrendsError(result.error)
+      } else if (result.trends.length === 0 && onTrendsError) {
         onTrendsError("トレンドを取得できませんでした。X連携とアカウントを確認するか、手動で入力してください。")
       }
     } catch (e) {
