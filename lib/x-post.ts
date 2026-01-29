@@ -394,33 +394,64 @@ let cachedAppOnlyBearerTokenExpiry = 0
 const BEARER_TOKEN_CACHE_MS = 50 * 60 * 1000 // 50 min (tokens often valid 2h)
 
 export async function getAppOnlyBearerToken(): Promise<string> {
+  // 1) 環境変数で Bearer Token が指定されていればそれを使う（Developer Portal の Keys and tokens からコピー可能）
+  const envBearer = (process.env.TWITTER_BEARER_TOKEN || process.env.BEARER_TOKEN || '').trim()
+  if (envBearer) {
+    return envBearer
+  }
+
   if (cachedAppOnlyBearerToken && Date.now() < cachedAppOnlyBearerTokenExpiry) {
     return cachedAppOnlyBearerToken
   }
-  const clientId = getTwitterClientId()
-  const clientSecret = getTwitterClientSecret()
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`, 'utf8').toString('base64')
-  const response = await fetch('https://api.x.com/oauth2/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${basicAuth}`,
-    },
-    body: 'grant_type=client_credentials',
-  })
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    console.error('[AppOnlyBearer] Error:', response.status, text)
-    throw new Error(`アプリ認証トークンの取得に失敗しました: ${response.status}`)
+
+  // 2) Client Credentials で取得（API Key/Secret または Client ID/Secret を使用）
+  // X の oauth2/token は API Key と API Key Secret で Basic 認証する場合あり。未設定時は Client ID/Secret で試行
+  const apiKey = (process.env.TWITTER_API_KEY || process.env.TWITTER_CLIENT_ID || '').trim()
+  const apiSecret = (process.env.TWITTER_API_SECRET || process.env.TWITTER_CLIENT_SECRET || '').trim()
+  if (!apiKey || !apiSecret) {
+    throw new Error(
+      'アプリ認証トークンの取得に失敗しました: TWITTER_BEARER_TOKEN を設定するか、TWITTER_API_KEY と TWITTER_API_SECRET（または TWITTER_CLIENT_ID と TWITTER_CLIENT_SECRET）を設定してください。Developer Portal の Keys and tokens で Bearer Token をコピーして TWITTER_BEARER_TOKEN に設定すると簡単です。'
+    )
   }
-  const data = await response.json()
-  const token = data.access_token
-  if (!token) {
-    throw new Error('アプリ認証トークンの取得に失敗しました（トークンなし）')
+
+  const basicAuth = Buffer.from(`${apiKey}:${apiSecret}`, 'utf8').toString('base64')
+  const endpoints = ['https://api.twitter.com/oauth2/token', 'https://api.x.com/oauth2/token']
+  let lastError = ''
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${basicAuth}`,
+        },
+        body: 'grant_type=client_credentials',
+      })
+      const text = await response.text().catch(() => '')
+      if (!response.ok) {
+        lastError = `${response.status}: ${text}`
+        console.warn('[AppOnlyBearer]', endpoint, lastError)
+        continue
+      }
+      const data = JSON.parse(text)
+      const token = data.access_token
+      if (!token) {
+        lastError = 'レスポンスに access_token がありません'
+        continue
+      }
+      cachedAppOnlyBearerToken = token
+      cachedAppOnlyBearerTokenExpiry = Date.now() + BEARER_TOKEN_CACHE_MS
+      return token
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e)
+      console.warn('[AppOnlyBearer]', endpoint, lastError)
+    }
   }
-  cachedAppOnlyBearerToken = token
-  cachedAppOnlyBearerTokenExpiry = Date.now() + BEARER_TOKEN_CACHE_MS
-  return token
+
+  throw new Error(
+    `アプリ認証トークンの取得に失敗しました: ${lastError}. Developer Portal の Keys and tokens で Bearer Token をコピーし、環境変数 TWITTER_BEARER_TOKEN に設定してください。`
+  )
 }
 
 // Get trending topics (Japan - WOEID: 23424856)

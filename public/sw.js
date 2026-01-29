@@ -57,11 +57,13 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // レスポンスをクローンしてキャッシュに保存
-        const responseToCache = response.clone()
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, responseToCache)
-        })
+        // GET のみキャッシュ（POST は Cache API で unsupported）
+        if (request.method === 'GET' && response.ok) {
+          const responseToCache = response.clone()
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseToCache)
+          })
+        }
         return response
       })
       .catch(() => {
