@@ -39,8 +39,10 @@ export function useSubscription(userId: string | null): UseSubscriptionReturn {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
-  const isPro = subscription?.subscription_status === "pro" || false
-  
+  // 開発・自己運用でProを強制: .env.local に NEXT_PUBLIC_FORCE_PRO=true を設定
+  const forcePro = typeof window !== "undefined" ? process.env.NEXT_PUBLIC_FORCE_PRO === "true" : false
+  const isPro = forcePro || subscription?.subscription_status === "pro" || false
+
   const isTrialActive = Boolean(
     subscription?.subscription_status === "trial" && 
     subscription?.trial_ends_at && 
@@ -114,7 +116,7 @@ export function useSubscription(userId: string | null): UseSubscriptionReturn {
   return {
     subscription,
     limits,
-    isPro: isPro || isTrialActive,
+    isPro: forcePro || isPro || isTrialActive,
     isTrialActive,
     trialDaysRemaining,
     canGenerate: canGenerateState,

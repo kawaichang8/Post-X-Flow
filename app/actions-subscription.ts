@@ -122,18 +122,21 @@ export async function createUserSubscription(userId: string): Promise<UserSubscr
 // Check if user is Pro (includes active trial)
 // ============================================
 export async function isUserPro(userId: string): Promise<boolean> {
+  // 開発・自己運用でProを強制: .env に FORCE_PRO=true を設定
+  if (process.env.FORCE_PRO === "true") return true
+
   const subscription = await getUserSubscription(userId)
   if (!subscription) return false
-  
+
   if (subscription.subscription_status === "pro") {
     return true
   }
-  
+
   if (subscription.subscription_status === "trial" && subscription.trial_ends_at) {
     const trialEndsAt = new Date(subscription.trial_ends_at)
     return trialEndsAt > new Date()
   }
-  
+
   return false
 }
 
