@@ -38,6 +38,7 @@ import { PostGenerationCard } from "@/components/PostGenerationCard"
 import { OnboardingTour } from "@/components/OnboardingTour"
 import { EnhancedCalendar } from "@/components/EnhancedCalendar"
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
+import { ImprovementSuggestionsCard } from "@/components/ImprovementSuggestionsCard"
 import { cn } from "@/lib/utils"
 import { StatsHeroBanner } from "@/components/StatsHeroBanner"
 import { UpgradeBanner } from "@/components/UpgradeBanner"
@@ -607,7 +608,23 @@ function NewDashboardContent() {
 
             {/* Analytics View */}
             {activeView === "analytics" && user && (
-              <AnalyticsDashboard userId={user.id} />
+              <div className="space-y-6">
+                <AnalyticsDashboard userId={user.id} />
+                <ImprovementSuggestionsCard
+                  userId={user.id}
+                  onUseImprovement={(improvedText) => {
+                    setDrafts([
+                      {
+                        id: `improved-${Date.now()}`,
+                        content: improvedText,
+                        naturalness_score: 85,
+                      },
+                    ])
+                    handleNavigate("create")
+                  }}
+                  limit={5}
+                />
+              </div>
             )}
 
             {/* History View */}
