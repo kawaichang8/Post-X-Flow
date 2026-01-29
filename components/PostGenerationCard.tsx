@@ -402,7 +402,7 @@ export function PostGenerationCard({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 rounded-xl h-10 border-border/50 hover:bg-accent/80 hover:border-border transition-all duration-200"
+                  className="flex-1 rounded-xl h-10 border-2 border-border bg-card text-foreground shadow-sm hover:bg-accent hover:border-green-500/40 dark:bg-card/90"
                   onClick={() => onSaveDraft(post)}
                 >
                   <Bookmark className="h-4 w-4 mr-1.5" />
@@ -416,7 +416,7 @@ export function PostGenerationCard({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 rounded-xl h-10 border-border/50 hover:bg-accent/80 hover:border-border transition-all duration-200"
+                  className="flex-1 rounded-xl h-10 border-2 border-border bg-card text-foreground shadow-sm hover:bg-accent hover:border-green-500/40 dark:bg-card/90"
                   onClick={() => onSchedule(post)}
                 >
                   <Clock className="h-4 w-4 mr-1.5" />
@@ -427,7 +427,7 @@ export function PostGenerationCard({
             </Tooltip>
             <Button
               size="sm"
-              className="flex-1 rounded-xl h-10 btn-gradient-premium text-white font-medium shadow-lg shadow-green-500/20"
+              className="flex-1 rounded-xl h-10 bg-green-600 hover:bg-green-700 text-white font-medium shadow-md border-2 border-green-700/30 dark:bg-green-600 dark:hover:bg-green-500"
               onClick={handlePostClick}
               disabled={isPosting}
             >

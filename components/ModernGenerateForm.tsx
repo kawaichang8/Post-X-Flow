@@ -110,9 +110,9 @@ export function ModernGenerateForm({
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-muted-foreground">投稿設定</h3>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="rounded-xl text-muted-foreground hover:bg-accent/80 h-8"
+            className="rounded-xl h-8 border-2 text-foreground"
             onClick={() => setShowAdvanced(!showAdvanced)}
           >
             <Settings2 className="h-4 w-4 mr-1.5" />
@@ -237,6 +237,37 @@ export function ModernGenerateForm({
               </Select>
             </div>
 
+            {/* AI Provider: Grok / Claude */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">AIプロバイダー</Label>
+              <div className="flex gap-2">
+                {aiProviders.map((provider) => (
+                  <button
+                    key={provider.value}
+                    type="button"
+                    onClick={() => setAiProvider(provider.value)}
+                    className={cn(
+                      "flex-1 p-3 rounded-xl border-2 transition-all",
+                      aiProvider === provider.value
+                        ? "border-primary bg-primary/5"
+                        : "border-muted hover:border-muted-foreground/30"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Zap className={cn(
+                        "h-4 w-4",
+                        aiProvider === provider.value ? "text-primary" : "text-muted-foreground"
+                      )} />
+                      <div className="text-left">
+                        <p className="font-medium text-sm">{provider.label}</p>
+                        <p className="text-xs text-muted-foreground">{provider.description}</p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Context Mode: use past posts as RAG for coherent flow */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border">
               <div className="flex items-center gap-2">
@@ -296,40 +327,10 @@ export function ModernGenerateForm({
               </div>
             )}
 
-            {/* Advanced Settings */}
+            {/* Advanced Settings (other options if any in future) */}
             {showAdvanced && (
               <div className="space-y-4 p-4 bg-muted/30 rounded-xl border border-border animate-fade-in">
-                {/* AI Provider */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">AIプロバイダー</Label>
-                  <div className="flex gap-2">
-                    {aiProviders.map((provider) => (
-                      <button
-                        key={provider.value}
-                        type="button"
-                        onClick={() => setAiProvider(provider.value)}
-                        className={cn(
-                          "flex-1 p-3 rounded-xl border-2 transition-all",
-                          aiProvider === provider.value
-                            ? "border-primary bg-primary/5"
-                            : "border-muted hover:border-muted-foreground/30"
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Zap className={cn(
-                            "h-4 w-4",
-                            aiProvider === provider.value ? "text-primary" : "text-muted-foreground"
-                          )} />
-                          <div className="text-left">
-                            <p className="font-medium text-sm">{provider.label}</p>
-                            <p className="text-xs text-muted-foreground">{provider.description}</p>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
+                <p className="text-sm text-muted-foreground">追加オプションはここに表示されます。</p>
               </div>
             )}
 

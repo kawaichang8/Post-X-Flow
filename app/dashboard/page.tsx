@@ -725,7 +725,7 @@ function NewDashboardContent() {
                         size="sm"
                         onClick={() => handleGenerate(currentTrend, currentPurpose, "grok")}
                         disabled={isGenerating}
-                        className="rounded-xl hover:bg-accent/80"
+                        className="rounded-xl border-2 shadow-sm"
                       >
                         <RefreshCw className={cn("h-4 w-4 mr-2", isGenerating && "animate-spin")} />
                         再生成
@@ -870,7 +870,7 @@ function NewDashboardContent() {
                         size="sm"
                         onClick={loadHistory}
                         disabled={loadingHistory}
-                        className="rounded-xl"
+                        className="rounded-xl border-2 shadow-sm"
                       >
                         <RefreshCw className={cn("h-4 w-4 mr-1.5", loadingHistory && "animate-spin")} />
                         更新
