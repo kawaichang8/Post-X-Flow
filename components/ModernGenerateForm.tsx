@@ -17,6 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import {
   Sparkles,
@@ -27,18 +28,23 @@ import {
   Zap,
   Settings2,
   RefreshCw,
+  FlaskConical,
+  BookOpen,
+  ShieldCheck,
 } from "lucide-react"
 import { getTrendsForUser } from "@/app/actions"
 
 export type TrendItem = { name: string; query?: string; tweetVolume?: number | null }
 
 interface ModernGenerateFormProps {
-  onGenerate: (trend: string, purpose: string, aiProvider: string) => Promise<void>
+  onGenerate: (trend: string, purpose: string, aiProvider: string, abMode?: boolean, contextMode?: boolean, factCheck?: boolean) => Promise<void>
   isLoading?: boolean
   /** When set with X connected, shows "トレンドを取得" and trend list */
   userId?: string | null
   selectedAccountId?: string | null
   onTrendsError?: (message: string) => void
+  /** Pro: show AB Mode toggle for 2–3 variations comparison */
+  isPro?: boolean
 }
 
 const purposes = [
@@ -60,10 +66,14 @@ export function ModernGenerateForm({
   userId,
   selectedAccountId,
   onTrendsError,
+  isPro = false,
 }: ModernGenerateFormProps) {
   const [trend, setTrend] = useState("")
   const [purpose, setPurpose] = useState("engagement")
   const [aiProvider, setAiProvider] = useState("grok")
+  const [abMode, setAbMode] = useState(false)
+  const [contextMode, setContextMode] = useState(true)
+  const [factCheck, setFactCheck] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [trends, setTrends] = useState<TrendItem[]>([])
   const [isLoadingTrends, setIsLoadingTrends] = useState(false)
@@ -90,7 +100,7 @@ export function ModernGenerateForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!trend.trim()) return
-    await onGenerate(trend, purpose, aiProvider)
+    await onGenerate(trend, purpose, aiProvider, isPro ? abMode : false, contextMode, factCheck)
   }
 
   return (
@@ -226,6 +236,65 @@ export function ModernGenerateForm({
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Context Mode: use past posts as RAG for coherent flow */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-green-500" />
+                <div>
+                  <Label className="text-sm font-medium">コンテキストを考慮</Label>
+                  <p className="text-xs text-muted-foreground">直近投稿の流れ・テーマを踏まえて生成</p>
+                </div>
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Switch checked={contextMode} onCheckedChange={setContextMode} />
+                </TooltipTrigger>
+                <TooltipContent side="left" className="max-w-[240px]">
+                  <p className="text-xs">ONにするとあなたの直近5〜8件の投稿を参照し、前回の締めやテーマから自然につながる案を生成します。</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            {/* Fact Check: AI verify factual claims */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-green-500" />
+                <div>
+                  <Label className="text-sm font-medium">事実確認</Label>
+                  <p className="text-xs text-muted-foreground">数字・固有名詞などをAIでチェック</p>
+                </div>
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Switch checked={factCheck} onCheckedChange={setFactCheck} />
+                </TooltipTrigger>
+                <TooltipContent side="left" className="max-w-[240px]">
+                  <p className="text-xs">ONにすると生成後に事実関係をチェックし、スコアと修正提案を表示します。70未満の場合は投稿前に警告が出ます。</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            {/* AB Mode (Pro): generate 2–3 variations for comparison */}
+            {isPro && (
+              <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border">
+                <div className="flex items-center gap-2">
+                  <FlaskConical className="h-4 w-4 text-green-500" />
+                  <div>
+                    <Label className="text-sm font-medium">ABモード</Label>
+                    <p className="text-xs text-muted-foreground">2〜3案を同時投稿して分析で比較</p>
+                  </div>
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Switch checked={abMode} onCheckedChange={setAbMode} />
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-[240px]">
+                    <p className="text-xs">ONにすると同じトレンドで複数案を生成。投稿時に同じテストIDで記録し、分析ページでインプレッション差を比較できます。</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
 
             {/* Advanced Settings */}
             {showAdvanced && (

@@ -2,6 +2,306 @@
 
 import { createServerClient } from "@/lib/supabase"
 import { classifyError, logErrorToSentry } from "@/lib/error-handler"
+
+export interface AnalyticsPost {
+  id: string
+  text: string
+  impression_count: number | null
+  engagement_score: number | null
+  like_count: number
+  retweet_count: number
+  reply_count: number
+  engagement_rate: number | null
+  created_at: string
+  trend: string | null
+  purpose: string | null
+  tweet_id: string | null
+  context_used?: boolean | null
+  fact_score?: number | null
+}
+
+export interface OptimizationAdvice {
+  summary: string
+  suggestions: { type: "rewrite" | "media" | "timing"; text: string }[]
+  lowPerformersCount: number
+}
+
+/**
+ * Fetch posts for analytics dashboard (post_history, status=posted)
+ */
+export async function getAnalyticsPosts(
+  userId: string,
+  limit: number = 100
+): Promise<AnalyticsPost[]> {
+  try {
+    const supabase = createServerClient()
+    const { data, error } = await supabase
+      .from("post_history")
+      .select("id, text, impression_count, engagement_score, like_count, retweet_count, reply_count, engagement_rate, created_at, trend, purpose, tweet_id, context_used, fact_score")
+      .eq("user_id", userId)
+      .eq("status", "posted")
+      .order("created_at", { ascending: false })
+      .limit(limit)
+
+    if (error) throw error
+    return (data || []).map((p: Record<string, unknown>) => ({
+      id: p.id as string,
+      text: p.text as string,
+      impression_count: p.impression_count as number | null,
+      engagement_score: p.engagement_score as number | null,
+      like_count: (p.like_count as number) ?? 0,
+      retweet_count: (p.retweet_count as number) ?? 0,
+      reply_count: (p.reply_count as number) ?? 0,
+      engagement_rate: p.engagement_rate as number | null,
+      created_at: p.created_at as string,
+      trend: p.trend as string | null,
+      purpose: p.purpose as string | null,
+      tweet_id: p.tweet_id as string | null,
+      context_used: p.context_used as boolean | null | undefined,
+      fact_score: p.fact_score as number | null | undefined,
+    }))
+  } catch (e) {
+    console.error("getAnalyticsPosts error:", e)
+    return []
+  }
+}
+
+export interface ABTestGroup {
+  ab_test_id: string
+  posts: AnalyticsPost[]
+  winnerIndex: number // index in posts with highest impressions (or engagement if tie)
+  created_at: string // earliest post in group
+}
+
+/**
+ * Fetch AB test groups (posted posts with same ab_test_id) for comparison
+ */
+export async function getABTestGroups(userId: string, limit: number = 50): Promise<ABTestGroup[]> {
+  try {
+    const supabase = createServerClient()
+    const { data, error } = await supabase
+      .from("post_history")
+      .select("id, text, impression_count, engagement_score, like_count, retweet_count, reply_count, engagement_rate, created_at, trend, purpose, tweet_id, ab_test_id")
+      .eq("user_id", userId)
+      .eq("status", "posted")
+      .not("ab_test_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(limit * 3)
+
+    if (error || !data || data.length === 0) return []
+
+    const byAbId = new Map<string, AnalyticsPost[]>()
+    for (const row of data as Array<Record<string, unknown>>) {
+      const abId = row.ab_test_id as string
+      if (!byAbId.has(abId)) byAbId.set(abId, [])
+      byAbId.get(abId)!.push({
+        id: row.id as string,
+        text: row.text as string,
+        impression_count: row.impression_count as number | null,
+        engagement_score: row.engagement_score as number | null,
+        like_count: (row.like_count as number) ?? 0,
+        retweet_count: (row.retweet_count as number) ?? 0,
+        reply_count: (row.reply_count as number) ?? 0,
+        engagement_rate: row.engagement_rate as number | null,
+        created_at: row.created_at as string,
+        trend: row.trend as string | null,
+        purpose: row.purpose as string | null,
+        tweet_id: row.tweet_id as string | null,
+      })
+    }
+
+    const groups: ABTestGroup[] = []
+    for (const [ab_test_id, posts] of byAbId.entries()) {
+      if (posts.length < 2) continue
+      const sorted = [...posts].sort((a, b) => (b.impression_count ?? 0) - (a.impression_count ?? 0))
+      const winnerIndex = posts.indexOf(sorted[0])
+      const created_at = posts.reduce((min, p) => (p.created_at < min ? p.created_at : min), posts[0].created_at)
+      groups.push({ ab_test_id, posts, winnerIndex, created_at })
+    }
+    groups.sort((a, b) => (b.created_at > a.created_at ? 1 : -1))
+    return groups.slice(0, limit)
+  } catch (e) {
+    console.error("getABTestGroups error:", e)
+    return []
+  }
+}
+
+/**
+ * AI optimization advice for low-performance posts (rewrite, media, timing)
+ */
+export async function getOptimizationAdvice(userId: string): Promise<OptimizationAdvice | null> {
+  try {
+    const supabase = createServerClient()
+    const { data: posts, error } = await supabase
+      .from("post_history")
+      .select("id, text, impression_count, engagement_score, created_at")
+      .eq("user_id", userId)
+      .eq("status", "posted")
+      .not("engagement_score", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(50)
+
+    if (error || !posts || posts.length === 0) return null
+
+    const withImp = posts.filter((p: { impression_count: number | null }) => p.impression_count != null && p.impression_count > 0)
+    const avgImpressions = withImp.length > 0
+      ? withImp.reduce((s: number, p: { impression_count: number | null }) => s + (p.impression_count || 0), 0) / withImp.length
+      : 0
+    const avgEngagement = posts.length > 0
+      ? posts.reduce((s: number, p: { engagement_score: number | null }) => s + (p.engagement_score || 0), 0) / posts.length
+      : 0
+
+    const lowPerformers = posts.filter((p: { impression_count: number | null; engagement_score: number | null }) => {
+      const imp = p.impression_count || 0
+      const eng = p.engagement_score || 0
+      return (imp > 0 && imp < avgImpressions * 0.7) || eng < avgEngagement * 0.7
+    }).slice(0, 10)
+
+    if (lowPerformers.length === 0) {
+      return { summary: "低パフォーマンス投稿はありません。", suggestions: [], lowPerformersCount: 0 }
+    }
+
+    const { getGrokApiKey, getAnthropicApiKey } = await import("@/lib/server-only")
+    let apiKey: string | null = null
+    let useGrok = true
+    try {
+      apiKey = getGrokApiKey()
+    } catch {
+      try {
+        apiKey = getAnthropicApiKey()
+        useGrok = false
+      } catch {
+        return {
+          summary: "低パフォーマンス投稿が" + lowPerformers.length + "件あります。冒頭の引きを強くする・メディア追加・投稿時間の見直しを検討してください。",
+          suggestions: [
+            { type: "rewrite", text: "冒頭10文字で興味を引くフックを入れる" },
+            { type: "media", text: "画像や動画を添付してインプレッションを増やす" },
+            { type: "timing", text: "アナリティクスの好調時間帯に投稿する" },
+          ],
+          lowPerformersCount: lowPerformers.length,
+        }
+      }
+    }
+
+    const sampleTexts = lowPerformers.slice(0, 3).map((p: { text: string }) => p.text).join("\n---\n")
+    const prompt = `以下のX投稿はインプレッション・エンゲージメントが平均を下回っています。改善アドバイスを3つ以内で簡潔に出力してください（書き換え・メディア追加・投稿タイミング）。日本語で。\n\n【投稿例】\n${sampleTexts}\n\n【出力形式】JSONのみ: { "summary": "要約", "suggestions": [{"type":"rewrite"|"media"|"timing","text":"説明"}] }`
+
+    if (useGrok && apiKey) {
+      const res = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: "grok-3-latest",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.3,
+          max_tokens: 500,
+        }),
+      })
+      if (!res.ok) throw new Error("Grok API error")
+      const data = await res.json()
+      const content = data.choices?.[0]?.message?.content?.trim() || ""
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; suggestions?: { type: string; text: string }[] }
+        return {
+          summary: parsed.summary || "改善の余地があります。",
+          suggestions: (parsed.suggestions || []).map((s) => ({
+            type: (s.type === "media" || s.type === "timing" ? s.type : "rewrite") as "rewrite" | "media" | "timing",
+            text: s.text,
+          })),
+          lowPerformersCount: lowPerformers.length,
+        }
+      }
+    } else if (apiKey) {
+      const Anthropic = (await import("@anthropic-ai/sdk")).default
+      const client = new Anthropic({ apiKey })
+      const msg = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 500,
+        messages: [{ role: "user", content: prompt }],
+      })
+      const content = (msg.content[0] as { text?: string })?.text?.trim() || ""
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; suggestions?: { type: string; text: string }[] }
+        return {
+          summary: parsed.summary || "改善の余地があります。",
+          suggestions: (parsed.suggestions || []).map((s) => ({
+            type: (s.type === "media" || s.type === "timing" ? s.type : "rewrite") as "rewrite" | "media" | "timing",
+            text: s.text,
+          })),
+          lowPerformersCount: lowPerformers.length,
+        }
+      }
+    }
+
+    return {
+      summary: "低パフォーマンス投稿が" + lowPerformers.length + "件あります。",
+      suggestions: [
+        { type: "rewrite", text: "冒頭の引きを強くする" },
+        { type: "media", text: "画像・動画を添付する" },
+        { type: "timing", text: "好調時間帯に投稿する" },
+      ],
+      lowPerformersCount: lowPerformers.length,
+    }
+  } catch (e) {
+    console.error("getOptimizationAdvice error:", e)
+    return null
+  }
+}
+
+export interface OptimizedVersionResult {
+  improvedText: string
+  expectedImpressionsLiftPercent: number
+  reason?: string
+}
+
+/**
+ * Generate optimized version of a post (AI brush-up) and expected impressions lift (rule-based)
+ */
+export async function generateOptimizedVersion(
+  userId: string,
+  postId: string
+): Promise<OptimizedVersionResult | null> {
+  try {
+    const supabase = createServerClient()
+    const { data: post, error } = await supabase
+      .from("post_history")
+      .select("id, text, purpose, impression_count, engagement_score")
+      .eq("id", postId)
+      .eq("user_id", userId)
+      .eq("status", "posted")
+      .maybeSingle()
+
+    if (error || !post) return null
+
+    const { improveTweetTextAction } = await import("@/app/actions")
+    const result = await improveTweetTextAction(
+      post.text as string,
+      (post.purpose as string) || undefined,
+      "grok",
+      { userId, runFactCheck: true }
+    )
+
+    if (!result?.improvedText) return null
+
+    // Rule-based expected lift: hook/opening improved → ~10–15%, structure improved → ~5–10%
+    const originalLen = (post.text as string).length
+    const improvedLen = result.improvedText.length
+    const hasMoreStructure = result.improvedText.split("\n").length > (post.text as string).split("\n").length
+    const expectedImpressionsLiftPercent = hasMoreStructure ? 12 : originalLen < 50 && improvedLen > originalLen ? 15 : 10
+
+    return {
+      improvedText: result.improvedText,
+      expectedImpressionsLiftPercent,
+      reason: result.reason || undefined,
+    }
+  } catch (e) {
+    console.error("generateOptimizedVersion error:", e)
+    return null
+  }
+}
+
 import { predictEngagementHybrid } from "@/lib/engagement-predictor"
 import type { EngagementFeatures, EngagementPrediction } from "@/lib/engagement-predictor-types"
 import { 

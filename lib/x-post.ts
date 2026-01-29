@@ -264,6 +264,21 @@ export async function postTweet(
   })
 }
 
+// Simple retweet (no comment) - X API v2 POST /2/users/:id/retweets
+export async function postRetweet(
+  targetTweetId: string,
+  accessToken: string
+): Promise<{ retweeted: boolean }> {
+  const client = new TwitterApi(accessToken)
+  const rwClient = client.readWrite
+  const me = await rwClient.v2.me()
+  if (!me.data?.id) {
+    throw new Error('認証ユーザー情報を取得できませんでした')
+  }
+  const result = await rwClient.v2.retweet(me.data.id, targetTweetId)
+  return { retweeted: result.data?.retweeted ?? true }
+}
+
 // Get tweet engagement metrics (likes, retweets, replies, impressions, reach)
 export interface TweetEngagement {
   tweetId: string
@@ -394,12 +409,20 @@ let cachedAppOnlyBearerTokenExpiry = 0
 const BEARER_TOKEN_CACHE_MS = 50 * 60 * 1000 // 50 min (tokens often valid 2h)
 
 const BEARER_TOKEN_HELP =
-  'Developer Portal の Keys and tokens で Bearer Token をコピーし、環境変数 TWITTER_BEARER_TOKEN に設定してください。ローカルは .env.local、本番（Vercel）は Vercel の Environment Variables に追加し、再デプロイしてください。'
+  '【重要】スタンドアロンアプリの Bearer Token では 403 になります。developer.x.com → Projects & Apps → Overview を開き、「Free」の下にあるプロジェクト（例: Default project-...）をクリック → その中に表示される「PROJECT APP」（鍵アイコン付き）をクリック → Keys and tokens タブで「Bearer Token」をコピーし、.env.local の TWITTER_BEARER_TOKEN に貼り付けて保存。「Standalone Apps」のアプリのトークンは使わないでください。設定後は開発サーバーを Ctrl+C で止めてから npm run dev で再起動してください。'
 
 export async function getAppOnlyBearerToken(): Promise<string> {
   // 環境変数で Bearer Token が指定されていればそれを使う（推奨。403 回避）
-  const envBearer = (process.env.TWITTER_BEARER_TOKEN || process.env.BEARER_TOKEN || '').trim()
+  let envBearer = (process.env.TWITTER_BEARER_TOKEN || process.env.BEARER_TOKEN || '').trim()
   if (envBearer) {
+    // .env の引用符を除去（"..." で囲んだ場合）
+    envBearer = envBearer.replace(/^["']|["']$/g, '')
+    // コピペで %2F, %2B, %3D などが入っていても正しく解釈する
+    try {
+      if (/%[0-9A-Fa-f]{2}/.test(envBearer)) envBearer = decodeURIComponent(envBearer)
+    } catch {
+      // デコードに失敗したらそのまま使う
+    }
     return envBearer
   }
 
@@ -463,75 +486,82 @@ export interface Trend {
   tweetVolume: number | null
 }
 
+const TRENDS_BASE_URLS = ['https://api.x.com', 'https://api.twitter.com'] as const
+
 export async function getTrendingTopics(
   accessToken: string,
   woeid: number = 23424856 // Japan
 ): Promise<Trend[]> {
   try {
-    // Use X API v2: GET /2/trends/by/woeid/{woeid}
-    // Free plan supports v2, so this should work
     const maxTrends = 10 // Get top 10
-    const url = new URL(`https://api.x.com/2/trends/by/woeid/${woeid}`)
-    url.searchParams.set('max_trends', String(maxTrends))
-    // trend.fields: array format in docs, but URL query uses comma-separated string
-    // Try without trend.fields first (default fields might be returned)
-    // If needed, we can add: url.searchParams.set('trend.fields', 'trend_name,tweet_count')
+    let lastStatus = 0
+    let errorDetail = ''
 
-    console.log('[Trends v2] Request URL:', url.toString())
-    console.log('[Trends v2] WOEID:', woeid)
+    for (const baseUrl of TRENDS_BASE_URLS) {
+      const url = new URL(`${baseUrl}/2/trends/by/woeid/${woeid}`)
+      url.searchParams.set('max_trends', String(maxTrends))
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    })
+      console.log('[Trends v2] Request URL:', url.toString())
+      console.log('[Trends v2] WOEID:', woeid)
 
-    console.log('[Trends v2] Response status:', response.status, response.statusText)
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '')
-      console.error('[Trends v2] Error response:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
       })
-      
-      // Try to parse error JSON
-      let errorDetail = errorText
-      try {
-        const errorJson = JSON.parse(errorText)
-        if (errorJson.errors && Array.isArray(errorJson.errors)) {
-          errorDetail = errorJson.errors.map((e: any) => e.detail || e.title || JSON.stringify(e)).join(', ')
-        } else if (errorJson.detail) {
-          errorDetail = errorJson.detail
+
+      console.log('[Trends v2] Response status:', response.status, response.statusText)
+      lastStatus = response.status
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '')
+        try {
+          const errorJson = JSON.parse(errorText)
+          if (errorJson.errors && Array.isArray(errorJson.errors)) {
+            errorDetail = errorJson.errors.map((e: any) => e.detail || e.title || JSON.stringify(e)).join(', ')
+          } else if (errorJson.detail) {
+            errorDetail = errorJson.detail
+          } else {
+            errorDetail = errorText
+          }
+        } catch {
+          errorDetail = errorText
         }
-      } catch {
-        // Keep original errorText
+        console.error('[Trends v2] Error response:', { status: response.status, body: errorDetail })
+        // 401 のときはもう一つの base URL で再試行
+        if (response.status === 401 && baseUrl === TRENDS_BASE_URLS[0]) continue
+        break
       }
-      
-      throw new Error(`X API v2 トレンド取得エラー (${response.status}): ${errorDetail}`)
+
+      const data = await response.json()
+      console.log('[Trends v2] Response data:', JSON.stringify(data).substring(0, 500))
+
+      if (data.errors && data.errors.length > 0) {
+        const errorMessages = data.errors.map((e: any) => e.detail || e.title || JSON.stringify(e)).join(', ')
+        throw new Error(`X API v2 エラー: ${errorMessages}`)
+      }
+      if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+        throw new Error('トレンドデータが空です')
+      }
+      const processed = processTrendsV2(data.data)
+      console.log('[Trends v2] Processed trends:', processed.length)
+      return processed
     }
 
-    const data = await response.json()
-    console.log('[Trends v2] Response data:', JSON.stringify(data).substring(0, 500))
-
-    // v2 response format: { data: [{ trend_name, tweet_count }], errors?: [...] }
-    if (data.errors && data.errors.length > 0) {
-      console.error('[Trends v2] API errors in response:', data.errors)
-      const errorMessages = data.errors.map((e: any) => e.detail || e.title || JSON.stringify(e)).join(', ')
-      throw new Error(`X API v2 エラー: ${errorMessages}`)
+    // 両方の base URL で失敗した場合
+    if (lastStatus === 403 && /project|Project/i.test(errorDetail)) {
+      throw new Error(
+        `X API v2 では、アプリを「Project」に紐付けたうえで、そのアプリの Bearer Token を使う必要があります。${BEARER_TOKEN_HELP}`
+      )
     }
-
-    if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
-      console.warn('[Trends v2] Empty data array in response')
-      throw new Error('トレンドデータが空です')
+    if (lastStatus === 401) {
+      throw new Error(
+        `Bearer Token が無効または失効しています（401）。Developer Portal の Project 内 App → Keys and tokens で Bearer Token を「Regenerate」し、表示されたトークンを .env.local の TWITTER_BEARER_TOKEN に貼り付けて保存・再起動してください。Free プランでトレンド API にアクセスできない場合もあります。その場合はトレンド欄にハッシュタグなどを手動で入力して投稿できます。`
+      )
     }
-
-    const processed = processTrendsV2(data.data)
-    console.log('[Trends v2] Processed trends:', processed.length)
-    return processed
+    throw new Error(`X API v2 トレンド取得エラー (${lastStatus}): ${errorDetail}`)
   } catch (error) {
     if (error instanceof Error && error.message.includes('最新のトレンドを取得できませんでした')) throw error
     if (error instanceof Error) {
@@ -552,6 +582,60 @@ function processTrendsV2(trends: any[]): Trend[] {
       query: trend.trend_name, // v2 doesn't have separate query field, use trend_name
       tweetVolume: trend.tweet_count ?? null,
     }))
+}
+
+// Get personalized trends using user's OAuth token (Free プランで利用可能)
+// Endpoint: GET /2/users/personalized_trends
+export async function getPersonalizedTrends(userAccessToken: string): Promise<Trend[]> {
+  const baseUrls = ['https://api.x.com', 'https://api.twitter.com']
+  let lastStatus = 0
+  let errorDetail = ''
+
+  for (const baseUrl of baseUrls) {
+    try {
+      const url = `${baseUrl}/2/users/personalized_trends`
+      console.log('[PersonalizedTrends] Request URL:', url)
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${userAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      console.log('[PersonalizedTrends] Response status:', response.status, response.statusText)
+      lastStatus = response.status
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '')
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorDetail = errorJson.detail || errorJson.errors?.[0]?.detail || errorText
+        } catch {
+          errorDetail = errorText
+        }
+        console.error('[PersonalizedTrends] Error:', { status: response.status, body: errorDetail })
+        // 401/403 のときは次の base URL で再試行
+        if ((response.status === 401 || response.status === 403) && baseUrl === baseUrls[0]) continue
+        break
+      }
+
+      const data = await response.json()
+      console.log('[PersonalizedTrends] Response data:', JSON.stringify(data).substring(0, 500))
+
+      if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+        return processTrendsV2(data.data)
+      }
+      throw new Error('パーソナライズドトレンドが空です')
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('パーソナライズド')) throw e
+      errorDetail = e instanceof Error ? e.message : String(e)
+      console.error('[PersonalizedTrends] Error:', errorDetail)
+    }
+  }
+
+  throw new Error(`パーソナライズドトレンドの取得に失敗しました (${lastStatus}): ${errorDetail}`)
 }
 
 // Search for places/locations

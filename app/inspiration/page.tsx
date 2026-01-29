@@ -3,15 +3,16 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { getInspirationPosts, generateQuoteRTDraft, postQuoteRT, InspirationPost, QuoteRTDraft } from "@/app/actions-inspiration"
+import { getInspirationPosts, generateQuoteRTDraft, postQuoteRT, postSimpleRetweet, scheduleRetweet, InspirationPost, QuoteRTDraft } from "@/app/actions-inspiration"
 import { getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, TwitterAccount } from "@/app/actions"
 import { useSubscription } from "@/hooks/useSubscription"
-import { UpgradeBanner } from "@/components/UpgradeBanner"
+import { ProCard } from "@/components/ProCard"
+import { RetweetModal } from "@/components/RetweetModal"
+import { InspirationList } from "@/components/InspirationList"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import {
   AlertDialog,
@@ -25,20 +26,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
-import {
-  ArrowLeft,
-  Quote,
-  Heart,
-  Repeat2,
-  MessageCircle,
-  Eye,
-  Sparkles,
-  Loader2,
-  Send,
-  Calendar,
-  RefreshCw,
-  Lock,
-} from "lucide-react"
+import { ArrowLeft, Quote, Sparkles, Loader2, Send } from "lucide-react"
 
 interface User {
   id: string
@@ -64,6 +52,9 @@ export default function InspirationPage() {
   const [userContext, setUserContext] = useState("")
   const [posting, setPosting] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+
+  // Auto-retweet modal
+  const [retweetModalPost, setRetweetModalPost] = useState<InspirationPost | null>(null)
 
   const { isPro, startCheckout } = useSubscription(user?.id ?? null)
   const upgradeEnabled = process.env.NEXT_PUBLIC_UPGRADE_ENABLED !== "false"
@@ -145,6 +136,34 @@ export default function InspirationPage() {
     }
   }
 
+  const handlePostSimpleRetweet = async (tweetId: string) => {
+    if (!user || !selectedAccountId) return { success: false, error: "アカウントを選択してください。" }
+    const account = await getTwitterAccountById(selectedAccountId, user.id)
+    if (!account?.access_token) return { success: false, error: "Twitterアカウントが見つかりません。" }
+    return postSimpleRetweet(user.id, tweetId, account.access_token, selectedAccountId)
+  }
+
+  const handlePostQuoteRetweet = async (tweetId: string, comment: string) => {
+    if (!user || !selectedAccountId) return { success: false, error: "アカウントを選択してください。" }
+    const account = await getTwitterAccountById(selectedAccountId, user.id)
+    if (!account?.access_token) return { success: false, error: "Twitterアカウントが見つかりません。" }
+    const result = await postQuoteRT(user.id, comment, tweetId, account.access_token, selectedAccountId)
+    return { success: result.success, error: result.error }
+  }
+
+  const handleScheduleRetweet = async (
+    tweetId: string,
+    type: "simple" | "quote",
+    options: { comment?: string; scheduledFor: Date }
+  ) => {
+    if (!user) return { success: false, error: "ログインしてください。" }
+    return scheduleRetweet(user.id, tweetId, type, {
+      comment: options.comment,
+      scheduledFor: options.scheduledFor,
+      twitterAccountId: selectedAccountId ?? undefined,
+    })
+  }
+
   const handlePost = async () => {
     if (!user || !draft || !selectedAccountId) return
     
@@ -216,13 +235,11 @@ export default function InspirationPage() {
         </div>
 
         {!isPro && upgradeEnabled && (
-          <UpgradeBanner
-            trialDaysRemaining={0}
-            generationsRemaining={0}
-            generationsLimit={3}
+          <ProCard
+            config={{ spotsLeft: 5, spotsTotal: 5, currentPlan: "Free" }}
             onUpgrade={handleUpgrade}
             variant="compact"
-            dismissible={false}
+            showAsUpgrade={true}
           />
         )}
 
@@ -247,108 +264,66 @@ export default function InspirationPage() {
           </CardContent>
         </Card>
 
-        {/* Posts List */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-purple-500" />
-            人気の投稿
-            {posts.length > 0 && (
-              <Badge variant="secondary" className="ml-2">{posts.length}件</Badge>
-            )}
-          </h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadPosts}
-            disabled={loadingPosts}
-            className="rounded-xl"
-          >
-            <RefreshCw className={cn("h-4 w-4 mr-1.5", loadingPosts && "animate-spin")} />
-            更新
-          </Button>
-        </div>
+        {/* Inspiration list: Auto-Retweet + Quote RT */}
+        <InspirationList
+          posts={posts}
+          loading={loadingPosts}
+          isPro={isPro}
+          onRefresh={loadPosts}
+          onAutoRetweet={(post) => {
+            if (!isPro) {
+              showToast("自動リツイートはProプランで利用できます", "error")
+              return
+            }
+            if (!post.tweet_id) {
+              showToast("元ツイートIDがありません", "error")
+              return
+            }
+            setRetweetModalPost(post)
+          }}
+          onGenerateQuote={handleGenerateQuoteRT}
+          generatingForId={generatingFor}
+        />
 
-        {loadingPosts ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : posts.length === 0 ? (
-          <Card className="rounded-2xl border-dashed">
-            <CardContent className="py-12 text-center">
-              <Quote className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-              <p className="text-muted-foreground">
-                まだ投稿がありません。ダッシュボードから投稿を作成してください。
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {posts.map((post) => (
-              <Card
-                key={post.id}
-                className={cn(
-                  "rounded-2xl border-0 shadow-md bg-card/80 backdrop-blur-sm transition-all",
-                  draft?.originalPost.id === post.id && "ring-2 ring-purple-500"
-                )}
-              >
-                <CardContent className="p-4">
-                  <p className="text-sm whitespace-pre-wrap mb-4">{post.text}</p>
-                  
-                  {/* Engagement Stats */}
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground mb-4">
-                    <span className="flex items-center gap-1">
-                      <Heart className="h-3.5 w-3.5 text-red-400" />
-                      {post.like_count}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Repeat2 className="h-3.5 w-3.5 text-green-400" />
-                      {post.retweet_count}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <MessageCircle className="h-3.5 w-3.5 text-blue-400" />
-                      {post.reply_count}
-                    </span>
-                    {post.impression_count && (
-                      <span className="flex items-center gap-1">
-                        <Eye className="h-3.5 w-3.5" />
-                        {post.impression_count.toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Generate Button */}
-                  <Button
-                    onClick={() => handleGenerateQuoteRT(post)}
-                    disabled={generatingFor === post.id || !isPro}
-                    className={cn(
-                      "w-full rounded-xl",
-                      isPro
-                        ? "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
-                        : "opacity-60"
-                    )}
-                  >
-                    {generatingFor === post.id ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        生成中...
-                      </>
-                    ) : !isPro ? (
-                      <>
-                        <Lock className="h-4 w-4 mr-2" />
-                        Pro限定
-                      </>
-                    ) : (
-                      <>
-                        <Quote className="h-4 w-4 mr-2" />
-                        引用RTを生成
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        {/* Auto-Retweet modal */}
+        <RetweetModal
+          post={retweetModalPost}
+          isOpen={!!retweetModalPost}
+          onClose={() => setRetweetModalPost(null)}
+          onPostSimple={async (tweetId) => {
+            const result = await handlePostSimpleRetweet(tweetId)
+            if (result.success) {
+              showToast("リツイートしました", "success")
+              loadPosts()
+            } else {
+              showToast(result.error ?? "リツイートに失敗しました", "error")
+            }
+            return result
+          }}
+          onPostQuote={async (tweetId, comment) => {
+            const result = await handlePostQuoteRetweet(tweetId, comment)
+            if (result.success) {
+              showToast("引用RTを投稿しました", "success")
+              loadPosts()
+            } else {
+              showToast(result.error ?? "引用RTに失敗しました", "error")
+            }
+            return result
+          }}
+          onSchedule={async (tweetId, type, options) => {
+            const result = await handleScheduleRetweet(tweetId, type, options)
+            if (result.success) {
+              showToast(
+                `自動リツイートを ${new Date(options.scheduledFor).toLocaleString("ja-JP")} に予約しました`,
+                "success"
+              )
+              loadPosts()
+            } else {
+              showToast(result.error ?? "予約に失敗しました", "error")
+            }
+            return result
+          }}
+        />
 
         {/* Draft Preview */}
         {draft && (

@@ -22,6 +22,13 @@ export interface GeneratePostsParams {
   enableRealtimeKnowledge?: boolean // リアルタイム知識挿入（Grok専用）
   realtimeTrends?: string[] // 最新トレンド情報（オプション）
   scoreConfig?: Partial<ScoreConfig> // スコア計算設定（オプション）
+  /** RAG: user's recent posts for coherent theme/intro flow */
+  pastPostsContext?: string
+}
+
+export interface FactCheckResult {
+  score: number // 0-100
+  suggestions: string[]
 }
 
 // Claude API implementation
@@ -39,6 +46,7 @@ function getAnthropicClient(): Anthropic {
 
 const PROMPT_TEMPLATE = `現在のトレンド参考: {trend}
 投稿目的: {purpose}
+{contextSection}
 
 Xでインプレッション（表示回数）が最大化されるテキストフォーマットで、3案の投稿を生成してください。
 
@@ -93,30 +101,31 @@ export async function generatePosts({
   enableHumor = false,
   enableRealtimeKnowledge = false,
   realtimeTrends = [],
-  scoreConfig
+  scoreConfig,
+  pastPostsContext
 }: GeneratePostsParams): Promise<PostDraft[]> {
   try {
     // Grokをデフォルトに、明示的にClaudeが指定された場合のみClaudeを使用
     if (aiProvider === 'claude') {
       try {
         getAnthropicApiKey() // Check if key exists
-        return await generateWithClaude(trend, purpose, scoreConfig)
+        return await generateWithClaude(trend, purpose, scoreConfig, pastPostsContext)
       } catch {
         // Claude APIキーがない場合はGrokにフォールバック
         console.log('[AI Generator] Claude API key not found, falling back to Grok')
-        return await generateWithGrok(trend, purpose, enableHumor, enableRealtimeKnowledge, realtimeTrends, scoreConfig)
+        return await generateWithGrok(trend, purpose, enableHumor, enableRealtimeKnowledge, realtimeTrends, scoreConfig, pastPostsContext)
       }
     } else {
       // デフォルト: Grok
       try {
         getGrokApiKey() // Check if key exists
-        return await generateWithGrok(trend, purpose, enableHumor, enableRealtimeKnowledge, realtimeTrends, scoreConfig)
+        return await generateWithGrok(trend, purpose, enableHumor, enableRealtimeKnowledge, realtimeTrends, scoreConfig, pastPostsContext)
       } catch {
         // Grok APIキーがない場合はClaudeにフォールバック
         console.log('[AI Generator] Grok API key not found, falling back to Claude')
         try {
           getAnthropicApiKey()
-          return await generateWithClaude(trend, purpose, scoreConfig)
+          return await generateWithClaude(trend, purpose, scoreConfig, pastPostsContext)
         } catch {
           throw new Error('No AI API key configured. Please set GROK_API_KEY (recommended) or ANTHROPIC_API_KEY in Vercel environment variables.')
         }
@@ -132,10 +141,14 @@ export async function generatePosts({
   }
 }
 
-async function generateWithClaude(trend: string, purpose: string, scoreConfig?: Partial<ScoreConfig>): Promise<PostDraft[]> {
+async function generateWithClaude(trend: string, purpose: string, scoreConfig?: Partial<ScoreConfig>, pastPostsContext?: string): Promise<PostDraft[]> {
+  const contextSection = pastPostsContext?.trim()
+    ? `【ユーザーの直近投稿（流れを踏まえる）】\n${pastPostsContext}\n\n上記の投稿の流れ・テーマを踏まえ、自然につながる投稿案を生成してください。前回の締めやテーマから続く導入を検討すること。\n\n`
+    : ''
   const prompt = PROMPT_TEMPLATE
     .replace('{trend}', trend)
     .replace('{purpose}', purpose)
+    .replace('{contextSection}', contextSection)
 
   // Use Claude 3.5 Sonnet - optimal balance of cost and quality for tweet generation
   // Cost: $3/1M input tokens, $15/1M output tokens
@@ -259,6 +272,7 @@ async function generateWithClaude(trend: string, purpose: string, scoreConfig?: 
 // Grok専用プロンプトテンプレート（ユーモア・リアルタイム知識対応）
 const GROK_PROMPT_TEMPLATE = `現在のトレンド参考: {trend}
 投稿目的: {purpose}
+{contextSection}
 {realtimeKnowledge}
 
 Xでインプレッション（表示回数）が最大化されるテキストフォーマットで、3案の投稿を生成してください。
@@ -317,9 +331,14 @@ async function generateWithGrok(
   enableHumor: boolean = false,
   enableRealtimeKnowledge: boolean = false,
   realtimeTrends: string[] = [],
-  scoreConfig?: Partial<ScoreConfig>
+  scoreConfig?: Partial<ScoreConfig>,
+  pastPostsContext?: string
 ): Promise<PostDraft[]> {
   const grokApiKey = getGrokApiKey()
+  
+  const contextSection = pastPostsContext?.trim()
+    ? `【ユーザーの直近投稿（流れを踏まえる）】\n${pastPostsContext}\n\n上記の投稿の流れ・テーマを踏まえ、自然につながる投稿案を生成してください。前回の締めやテーマから続く導入を検討すること。\n\n`
+    : ''
   
   // リアルタイム知識セクションを構築
   let realtimeKnowledgeSection = ''
@@ -340,6 +359,7 @@ async function generateWithGrok(
   const prompt = GROK_PROMPT_TEMPLATE
     .replace('{trend}', trend)
     .replace('{purpose}', purpose)
+    .replace('{contextSection}', contextSection)
     .replace('{realtimeKnowledge}', realtimeKnowledgeSection)
     .replace('{humorRequirement}', humorRequirement || '- **トーン**: フレンドリー、正直、押し売り感ゼロ')
     .replace('{realtimeRequirement}', realtimeRequirement || '')
@@ -458,12 +478,18 @@ export interface ImprovedText {
   improvements: string[]
   naturalnessScore: number
   explanation: string
+  factScore?: number
+  factSuggestions?: string[]
 }
 
 export interface ImproveTextParams {
   originalText: string
   purpose?: string
   aiProvider?: 'grok' | 'claude'
+  /** RAG: user's recent posts for coherent flow */
+  pastPostsContext?: string
+  /** Run fact-check on improved text and attach score/suggestions */
+  runFactCheck?: boolean
 }
 
 /**
@@ -472,31 +498,40 @@ export interface ImproveTextParams {
 export async function improveTweetText({
   originalText,
   purpose,
-  aiProvider = 'grok'
+  aiProvider = 'grok',
+  pastPostsContext,
+  runFactCheck = false
 }: ImproveTextParams): Promise<ImprovedText> {
   try {
+    let result: ImprovedText
     if (aiProvider === 'claude') {
       try {
         getAnthropicApiKey()
-        return await improveWithClaude(originalText, purpose)
+        result = await improveWithClaude(originalText, purpose, pastPostsContext)
       } catch {
         console.log('[AI Generator] Claude API key not found, falling back to Grok')
-        return await improveWithGrok(originalText, purpose)
+        result = await improveWithGrok(originalText, purpose, pastPostsContext)
       }
     } else {
       try {
         getGrokApiKey()
-        return await improveWithGrok(originalText, purpose)
+        result = await improveWithGrok(originalText, purpose, pastPostsContext)
       } catch {
         console.log('[AI Generator] Grok API key not found, falling back to Claude')
         try {
           getAnthropicApiKey()
-          return await improveWithClaude(originalText, purpose)
+          result = await improveWithClaude(originalText, purpose, pastPostsContext)
         } catch {
           throw new Error('No AI API key configured. Please set GROK_API_KEY (recommended) or ANTHROPIC_API_KEY in Vercel environment variables.')
         }
       }
     }
+    if (runFactCheck && result.improvedText) {
+      const fc = await factCheckDraft(result.improvedText, aiProvider)
+      result.factScore = fc.score
+      result.factSuggestions = fc.suggestions
+    }
+    return result
   } catch (error) {
     console.error('Error improving tweet text:', error)
     if (error instanceof Error) {
@@ -506,9 +541,12 @@ export async function improveTweetText({
   }
 }
 
-async function improveWithClaude(originalText: string, purpose?: string): Promise<ImprovedText> {
+async function improveWithClaude(originalText: string, purpose?: string, pastPostsContext?: string): Promise<ImprovedText> {
+  const contextBlock = pastPostsContext?.trim()
+    ? `【ユーザーの直近投稿（流れを踏まえる）】\n${pastPostsContext}\n\n上記の流れ・テーマに自然につながる改善を心がけてください。\n\n`
+    : ''
   const prompt = `以下のツイートテキストを改善・成形してください。
-
+${contextBlock}
 【元のテキスト】
 ${originalText}
 
@@ -594,11 +632,13 @@ ${purpose ? `【投稿目的】\n${purpose}\n` : ''}
   throw new Error('Claude API error: All models failed.')
 }
 
-async function improveWithGrok(originalText: string, purpose?: string): Promise<ImprovedText> {
+async function improveWithGrok(originalText: string, purpose?: string, pastPostsContext?: string): Promise<ImprovedText> {
   const grokApiKey = getGrokApiKey()
-  
+  const contextBlock = pastPostsContext?.trim()
+    ? `【ユーザーの直近投稿（流れを踏まえる）】\n${pastPostsContext}\n\n上記の流れ・テーマに自然につながる改善を心がけてください。\n\n`
+    : ''
   const prompt = `以下のツイートテキストを改善・成形してください。
-
+${contextBlock}
 【元のテキスト】
 ${originalText}
 
@@ -682,4 +722,82 @@ ${purpose ? `【投稿目的】\n${purpose}\n` : ''}
   })
 
   return response
+}
+
+const FACT_CHECK_PROMPT = `以下のX投稿案の事実関係を確認してください。具体的な数字・日付・固有名詞・主張に誤りがないかチェックし、修正提案があれば簡潔に挙げてください。
+
+【投稿案】
+{draft}
+
+【出力形式（JSONのみ）】
+{
+  "score": 0-100の数値（事実正確性スコア。100=問題なし、70未満=要確認）、
+  "suggestions": ["修正提案1", "修正提案2", ...]（問題なければ空配列）
+}`
+
+/**
+ * AI fact-check: verify factual claims in draft, return score (0-100) and correction suggestions
+ */
+export async function factCheckDraft(
+  text: string,
+  aiProvider: 'grok' | 'claude' = 'grok'
+): Promise<FactCheckResult> {
+  const prompt = FACT_CHECK_PROMPT.replace('{draft}', text.slice(0, 800))
+  try {
+    if (aiProvider === 'claude') {
+      try {
+        getAnthropicApiKey()
+        return await factCheckWithClaude(prompt)
+      } catch {
+        getGrokApiKey()
+        return await factCheckWithGrok(prompt)
+      }
+    }
+    getGrokApiKey()
+    return await factCheckWithGrok(prompt)
+  } catch (e) {
+    console.error('factCheckDraft error:', e)
+    return { score: 50, suggestions: ['事実確認の取得に失敗しました。内容を手動で確認してください。'] }
+  }
+}
+
+async function factCheckWithClaude(prompt: string): Promise<FactCheckResult> {
+  const client = getAnthropicClient()
+  const msg = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 500,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const content = (msg.content[0] as { text?: string })?.text?.trim() || ''
+  const jsonMatch = content.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) return { score: 70, suggestions: [] }
+  const parsed = JSON.parse(jsonMatch[0]) as { score?: number; suggestions?: string[] }
+  return {
+    score: Math.min(100, Math.max(0, Number(parsed.score) ?? 70)),
+    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+  }
+}
+
+async function factCheckWithGrok(prompt: string): Promise<FactCheckResult> {
+  const grokApiKey = getGrokApiKey()
+  const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${grokApiKey}` },
+    body: JSON.stringify({
+      model: 'grok-3-latest',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+      max_tokens: 500,
+    }),
+  })
+  if (!res.ok) throw new Error('Grok fact-check API error')
+  const data = await res.json()
+  const content = data.choices?.[0]?.message?.content?.trim() || ''
+  const jsonMatch = content.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) return { score: 70, suggestions: [] }
+  const parsed = JSON.parse(jsonMatch[0]) as { score?: number; suggestions?: string[] }
+  return {
+    score: Math.min(100, Math.max(0, Number(parsed.score) ?? 70)),
+    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+  }
 }

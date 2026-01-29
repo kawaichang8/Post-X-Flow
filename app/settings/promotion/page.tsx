@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { getPromotionSettings, savePromotionSettings } from "@/app/actions-promotion"
 import { useSubscription } from "@/hooks/useSubscription"
-import { UpgradeBanner } from "@/components/UpgradeBanner"
+import { ProCard } from "@/components/ProCard"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -125,13 +125,19 @@ export default function PromotionSettingsPage() {
         </div>
 
         {!isPro && upgradeEnabled && (
-          <UpgradeBanner
-            trialDaysRemaining={0}
-            generationsRemaining={3}
-            generationsLimit={3}
+          <ProCard
+            config={{
+              spotsLeft: 5,
+              spotsTotal: 5,
+              oldPrice: "¥66,000",
+              price: "¥44,800",
+              priceUnit: "/3ヶ月",
+              userCountLabel: "90人がPRO利用中",
+              currentPlan: "Free",
+            }}
             onUpgrade={handleUpgrade}
-            variant="compact"
-            dismissible={false}
+            variant="default"
+            showAsUpgrade={true}
           />
         )}
 

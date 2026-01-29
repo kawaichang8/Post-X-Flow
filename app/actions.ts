@@ -1,9 +1,9 @@
 "use server"
 
-import { generatePosts, PostDraft, improveTweetText, ImprovedText } from "@/lib/ai-generator"
+import { generatePosts, PostDraft, improveTweetText, ImprovedText, factCheckDraft } from "@/lib/ai-generator"
 import { createServerClient } from "@/lib/supabase"
 import { getPromotionSettingsForGeneration } from "@/app/actions-promotion"
-import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place, getAppOnlyBearerToken } from "@/lib/x-post"
+import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place, getAppOnlyBearerToken, getPersonalizedTrends } from "@/lib/x-post"
 import { generateEyeCatchImage, generateImageVariations, downloadImageAsBuffer, GeneratedImage } from "@/lib/image-generator"
 import { classifyError, logErrorToSentry, AppError, ErrorType } from "@/lib/error-handler"
 
@@ -36,6 +36,36 @@ interface PostHistoryItem {
 
 const PROMOTION_NATURALNESS_PENALTY = 3
 
+/** Extended draft with optional fact-check result (for UI and analytics) */
+export type PostDraftWithMeta = PostDraft & { factScore?: number; factSuggestions?: string[] }
+
+/**
+ * Fetch user's recent posts for RAG context (theme/intro flow)
+ */
+export async function getRecentPostsForContext(userId: string, limit: number = 8): Promise<string> {
+  try {
+    const supabaseAdmin = createServerClient()
+    const { data, error } = await supabaseAdmin
+      .from("post_history")
+      .select("text, created_at")
+      .eq("user_id", userId)
+      .in("status", ["posted", "draft"])
+      .order("created_at", { ascending: false })
+      .limit(limit)
+    if (error || !data?.length) return ""
+    return data
+      .map((row: { text: string; created_at: string }, i: number) => {
+        const d = new Date(row.created_at)
+        const dateStr = d.toLocaleDateString("ja-JP", { month: "short", day: "numeric" })
+        return `${i + 1}. (${dateStr}) ${(row.text || "").slice(0, 200)}${(row.text || "").length > 200 ? "…" : ""}`
+      })
+      .join("\n")
+  } catch (e) {
+    console.error("getRecentPostsForContext error:", e)
+    return ""
+  }
+}
+
 export async function generatePostDrafts(
   trend: string,
   purpose: string,
@@ -45,36 +75,78 @@ export async function generatePostDrafts(
     enableHumor?: boolean
     enableRealtimeKnowledge?: boolean
     realtimeTrends?: string[]
+    contextMode?: boolean
+    factCheck?: boolean
   }
-): Promise<PostDraft[]> {
+): Promise<PostDraftWithMeta[]> {
   try {
-    const drafts = await generatePosts({ 
-      trend, 
+    let pastPostsContext: string | undefined
+    if (options?.contextMode && options?.userId) {
+      pastPostsContext = await getRecentPostsForContext(options.userId, 8)
+    }
+
+    const drafts = await generatePosts({
+      trend,
       purpose,
       aiProvider: options?.aiProvider || 'grok',
       enableHumor: options?.enableHumor || false,
       enableRealtimeKnowledge: options?.enableRealtimeKnowledge || false,
-      realtimeTrends: options?.realtimeTrends || []
+      realtimeTrends: options?.realtimeTrends || [],
+      pastPostsContext: pastPostsContext || undefined,
     })
+
+    let result: PostDraftWithMeta[] = drafts.map((d) => ({ ...d }))
 
     const promo = options?.userId
       ? await getPromotionSettingsForGeneration(options.userId)
       : null
-
-    if (!promo?.enabled || !promo.link_url) {
-      return drafts
+    if (promo?.enabled && promo?.link_url) {
+      const suffix = promo.template.replace(/\[link\]/g, promo.link_url).trim()
+      result = result.map((d) => {
+        const text = `${d.text}\n\n${suffix}`
+        const naturalnessScore = Math.max(0, (d.naturalnessScore ?? 0) - PROMOTION_NATURALNESS_PENALTY)
+        return { ...d, text, naturalnessScore }
+      })
     }
 
-    const suffix = promo.template.replace(/\[link\]/g, promo.link_url).trim()
-    return drafts.map((d) => {
-      const text = `${d.text}\n\n${suffix}`
-      const naturalnessScore = Math.max(0, (d.naturalnessScore ?? 0) - PROMOTION_NATURALNESS_PENALTY)
-      return { ...d, text, naturalnessScore }
-    })
+    if (options?.factCheck) {
+      const aiProvider = (options?.aiProvider || 'grok') as 'grok' | 'claude'
+      const checked = await Promise.all(
+        result.map(async (d) => {
+          const fc = await factCheckDraft(d.text, aiProvider)
+          return { ...d, factScore: fc.score, factSuggestions: fc.suggestions }
+        })
+      )
+      result = checked
+    }
+
+    return result
   } catch (error) {
     console.error("Error generating drafts:", error)
     throw error
   }
+}
+
+/** AB test: generate 2–3 variations (different hooks/formats) with a shared ab_test_id for comparison in analytics */
+export async function generatePostDraftsAB(
+  trend: string,
+  purpose: string,
+  options?: {
+    userId?: string
+    aiProvider?: 'grok' | 'claude'
+    contextMode?: boolean
+    factCheck?: boolean
+  }
+): Promise<{ drafts: PostDraftWithMeta[]; abTestId: string }> {
+  const drafts = await generatePostDrafts(trend, purpose, {
+    userId: options?.userId,
+    aiProvider: options?.aiProvider || 'grok',
+    contextMode: options?.contextMode,
+    factCheck: options?.factCheck,
+  })
+  const abTestId = crypto.randomUUID()
+  const variations = drafts.slice(0, 3)
+  return { drafts: variations, abTestId }
 }
 
 export async function savePostToHistory(
@@ -82,12 +154,13 @@ export async function savePostToHistory(
   draft: PostDraft,
   trend: string,
   purpose: string,
-  status: 'draft' | 'posted' | 'scheduled' = 'draft'
+  status: 'draft' | 'posted' | 'scheduled' = 'draft',
+  options?: { abTestId?: string; contextUsed?: boolean; factScore?: number }
 ) {
   try {
     // Use service role client to bypass RLS in Server Actions
     const supabaseAdmin = createServerClient()
-    const { data, error } = await supabaseAdmin.from("post_history").insert({
+    const insertPayload: Record<string, unknown> = {
       user_id: userId,
       text: draft.text,
       hashtags: draft.hashtags,
@@ -95,7 +168,11 @@ export async function savePostToHistory(
       trend: trend,
       purpose: purpose,
       status: status,
-    }).select().single()
+    }
+    if (options?.abTestId) insertPayload.ab_test_id = options.abTestId
+    if (options?.contextUsed != null) insertPayload.context_used = options.contextUsed
+    if (options?.factScore != null) insertPayload.fact_score = options.factScore
+    const { data, error } = await supabaseAdmin.from("post_history").insert(insertPayload).select().single()
 
     if (error) {
       const appError = classifyError(error)
@@ -132,7 +209,7 @@ export async function approveAndPostTweet(
   trend: string,
   purpose: string,
   twitterAccountId?: string,
-  options?: { skipSaveToHistory?: boolean }
+  options?: { skipSaveToHistory?: boolean; abTestId?: string; contextUsed?: boolean; factScore?: number }
 ): Promise<{ success: boolean; tweetId?: string; error?: string; retryable?: boolean; retryAfter?: number }> {
   try {
     // Try to post to Twitter
@@ -280,7 +357,7 @@ export async function approveAndPostTweet(
     if (!options?.skipSaveToHistory) {
       try {
         const supabaseAdmin = createServerClient()
-        const { error } = await supabaseAdmin.from("post_history").insert({
+        const insertPayload: Record<string, unknown> = {
           user_id: userId,
           twitter_account_id: twitterAccountId || null,
           text: draft.text,
@@ -298,7 +375,11 @@ export async function approveAndPostTweet(
           retweet_count: retweetCount,
           reply_count: replyCount,
           quote_count: quoteCount,
-        })
+        }
+        if (options?.abTestId) insertPayload.ab_test_id = options.abTestId
+        if (options?.contextUsed != null) insertPayload.context_used = options.contextUsed
+        if (options?.factScore != null) insertPayload.fact_score = options.factScore
+        const { error } = await supabaseAdmin.from("post_history").insert(insertPayload)
 
         if (error) {
           const dbError = classifyError(error)
@@ -594,40 +675,39 @@ export async function updateTweetEngagement(
   }
 }
 
-// Update engagement for all posted tweets of a user
+// Rate limit: max tweets to update per run (X API limit safety)
+const ENGAGEMENT_SYNC_MAX_PER_RUN = 15
+const ENGAGEMENT_SYNC_DELAY_MS = 200
+
+// Update engagement for all posted tweets of a user (rate-limited)
 export async function updateAllTweetEngagements(
   userId: string,
   accessToken: string
 ): Promise<{ updated: number; failed: number }> {
   try {
     const supabaseAdmin = createServerClient()
-    
-    // Get all posted tweets with tweet_id
+
     const { data: postedTweets, error: fetchError } = await supabaseAdmin
       .from("post_history")
       .select("tweet_id")
       .eq("user_id", userId)
       .eq("status", "posted")
       .not("tweet_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(ENGAGEMENT_SYNC_MAX_PER_RUN)
 
     if (fetchError) throw fetchError
 
     let updated = 0
     let failed = 0
 
-    // Update engagement for each tweet
     for (const post of postedTweets || []) {
       if (!post.tweet_id) continue
-      
       try {
         const result = await updateTweetEngagement(post.tweet_id, accessToken)
-        if (result.success) {
-          updated++
-        } else {
-          failed++
-        }
-        // Add small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100))
+        if (result.success) updated++
+        else failed++
+        await new Promise((r) => setTimeout(r, ENGAGEMENT_SYNC_DELAY_MS))
       } catch (error) {
         console.error(`Error updating engagement for tweet ${post.tweet_id}:`, error)
         failed++
@@ -648,16 +728,54 @@ export async function getTrends(accessToken: string): Promise<Trend[]> {
 }
 
 // Get trending topics for the current user.
-// v2 trends API requires OAuth 2.0 Application-Only (app Bearer Token), not user token.
+// Free プランでは /2/users/personalized_trends (ユーザートークン) を使用。
+// Basic/Pro プランでは /2/trends/by/woeid (Bearer Token) を使用。
 // Returns { trends, error? } so the client gets a 200 with error message instead of 500.
 export async function getTrendsForUser(
   userId: string,
-  _accountId?: string
+  accountId?: string
 ): Promise<{ trends: Trend[]; error?: string }> {
   try {
-    const bearerToken = await getAppOnlyBearerToken()
-    const trends = await getTrends(bearerToken)
-    return { trends }
+    const supabaseAdmin = createServerClient()
+
+    // 1. ユーザーのアクセストークンを取得
+    const accountQuery = supabaseAdmin
+      .from("user_twitter_tokens")
+      .select("id, access_token, refresh_token")
+      .eq("user_id", userId)
+    const { data: account, error: accountError } = accountId
+      ? await accountQuery.eq("id", accountId).maybeSingle()
+      : await accountQuery.eq("is_default", true).maybeSingle()
+
+    // 2. ユーザートークンがあれば personalized_trends を試す（Free プラン対応）
+    if (account?.access_token) {
+      try {
+        console.log("[getTrendsForUser] Trying personalized_trends with user token...")
+        const trends = await getPersonalizedTrends(account.access_token)
+        if (trends.length > 0) {
+          return { trends }
+        }
+      } catch (personalizedError) {
+        console.warn("[getTrendsForUser] personalized_trends failed:", personalizedError)
+        // フォールバックで WOEID を試す
+      }
+    }
+
+    // 3. WOEID エンドポイントを試す（Basic/Pro プラン向け）
+    try {
+      console.log("[getTrendsForUser] Trying WOEID trends with Bearer token...")
+      const bearerToken = await getAppOnlyBearerToken()
+      const trends = await getTrends(bearerToken)
+      return { trends }
+    } catch (woeidError) {
+      console.warn("[getTrendsForUser] WOEID trends failed:", woeidError)
+      // 両方失敗した場合
+      const message = woeidError instanceof Error ? woeidError.message : "トレンドの取得に失敗しました。"
+      return {
+        trends: [],
+        error: `トレンド取得に失敗しました。Free プランでは X API のトレンド機能が制限されている場合があります。トレンド欄にハッシュタグを手動で入力して投稿できます。詳細: ${message}`
+      }
+    }
   } catch (e) {
     const message = e instanceof Error ? e.message : "トレンドの取得に失敗しました。"
     console.error("[getTrendsForUser]", message, e)
@@ -763,7 +881,7 @@ export async function postScheduledTweet(
 
     const { data: post, error: postError } = await supabaseAdmin
       .from("post_history")
-      .select("id, text, hashtags, naturalness_score, trend, purpose")
+      .select("id, text, hashtags, naturalness_score, trend, purpose, original_tweet_id, retweet_type")
       .eq("id", postHistoryId)
       .eq("user_id", userId)
       .eq("status", "scheduled")
@@ -786,32 +904,77 @@ export async function postScheduledTweet(
       return { success: false, error: "X連携アカウントのトークンを取得できませんでした。X連携をやり直してください。" }
     }
 
-    const draft: PostDraft = {
-      text: post.text,
-      hashtags: post.hashtags || [],
-      naturalnessScore: post.naturalness_score ?? 0,
+    let tweetId: string | null = null
+
+    // Scheduled retweet (auto-retweet): simple RT or quote RT
+    if (post.original_tweet_id && (post.retweet_type === "simple" || post.retweet_type === "quote")) {
+      const { postRetweet, postTweet: postTweetFn, refreshTwitterAccessToken } = await import("@/lib/x-post")
+      let accessToken = account.access_token
+      try {
+        if (post.retweet_type === "simple") {
+          const ret = await postRetweet(post.original_tweet_id, accessToken)
+          tweetId = null // simple RT doesn't return a new tweet id for the RT itself
+        } else {
+          const comment = (post.text || "").trim() || "👍"
+          const result = await postTweetFn(comment, accessToken, { quoteTweetId: post.original_tweet_id })
+          tweetId = result.id
+        }
+      } catch (err: unknown) {
+        if (err && typeof err === "object" && "code" in err && (err as { code?: number }).code === 401) {
+          const { data: tokenData } = await supabaseAdmin
+            .from("user_twitter_tokens")
+            .select("refresh_token")
+            .eq("user_id", userId)
+            .eq("id", account.id)
+            .single()
+          if (tokenData?.refresh_token) {
+            const { accessToken: newToken, refreshToken: newRefresh } = await refreshTwitterAccessToken(tokenData.refresh_token)
+            await supabaseAdmin
+              .from("user_twitter_tokens")
+              .update({ access_token: newToken, refresh_token: newRefresh, updated_at: new Date().toISOString() })
+              .eq("id", account.id)
+            accessToken = newToken
+            if (post.retweet_type === "simple") {
+              await postRetweet(post.original_tweet_id, accessToken)
+            } else {
+              const comment = (post.text || "").trim() || "👍"
+              const result = await postTweetFn(comment, accessToken, { quoteTweetId: post.original_tweet_id })
+              tweetId = result.id
+            }
+          } else {
+            return { success: false, error: "Twitter認証エラー。再連携してください。" }
+          }
+        } else {
+          const msg = err instanceof Error ? err.message : "リツイートに失敗しました。"
+          return { success: false, error: msg }
+        }
+      }
+    } else {
+      const draft: PostDraft = {
+        text: post.text,
+        hashtags: post.hashtags || [],
+        naturalnessScore: post.naturalness_score ?? 0,
+      }
+      const result = await approveAndPostTweet(
+        userId,
+        draft,
+        account.access_token,
+        post.trend || "",
+        post.purpose || "",
+        account.id,
+        { skipSaveToHistory: true }
+      )
+      if (!result.success) {
+        return { success: false, error: result.error || "投稿に失敗しました。" }
+      }
+      tweetId = result.tweetId || null
     }
 
-    const result = await approveAndPostTweet(
-      userId,
-      draft,
-      account.access_token,
-      post.trend || "",
-      post.purpose || "",
-      account.id,
-      { skipSaveToHistory: true }
-    )
-
-    if (!result.success) {
-      return { success: false, error: result.error || "投稿に失敗しました。" }
-    }
-
-    // Update the scheduled row to posted (don't insert a new row)
     await supabaseAdmin
       .from("post_history")
       .update({
         status: "posted",
-        tweet_id: result.tweetId || null,
+        tweet_id: tweetId,
         twitter_account_id: account.id,
         updated_at: new Date().toISOString(),
       })
@@ -832,12 +995,13 @@ export async function scheduleTweet(
   draft: PostDraft,
   scheduleFor: Date,
   trend: string,
-  purpose: string
+  purpose: string,
+  options?: { abTestId?: string; contextUsed?: boolean; factScore?: number }
 ) {
   try {
     // Use service role client to bypass RLS in Server Actions
     const supabaseAdmin = createServerClient()
-    const { error } = await supabaseAdmin.from("post_history").insert({
+    const insertPayload: Record<string, unknown> = {
       user_id: userId,
       text: draft.text,
       hashtags: draft.hashtags,
@@ -846,7 +1010,11 @@ export async function scheduleTweet(
       purpose: purpose,
       status: "scheduled",
       scheduled_for: scheduleFor.toISOString(),
-    })
+    }
+    if (options?.abTestId) insertPayload.ab_test_id = options.abTestId
+    if (options?.contextUsed != null) insertPayload.context_used = options.contextUsed
+    if (options?.factScore != null) insertPayload.fact_score = options.factScore
+    const { error } = await supabaseAdmin.from("post_history").insert(insertPayload)
 
     if (error) throw error
 
@@ -1920,22 +2088,30 @@ export interface SyntaxFormat {
  * 構文ボタン用: テキストをインプレッション最大化フォーマットに変換
  */
 /**
- * 手動で入力したツイートテキストを改善・成形する
+ * 手動で入力したツイートテキストを改善・成形する（オプション: コンテキスト・事実確認）
  */
 export async function improveTweetTextAction(
   text: string,
   purpose?: string,
-  aiProvider?: 'grok' | 'claude'
+  aiProvider?: 'grok' | 'claude',
+  options?: { userId?: string; runFactCheck?: boolean }
 ): Promise<ImprovedText | null> {
   try {
     if (!text.trim()) {
       throw new Error('テキストが空です')
     }
 
+    let pastPostsContext: string | undefined
+    if (options?.userId) {
+      pastPostsContext = await getRecentPostsForContext(options.userId, 6)
+    }
+
     const result = await improveTweetText({
       originalText: text,
       purpose,
-      aiProvider: aiProvider || 'grok'
+      aiProvider: aiProvider || 'grok',
+      pastPostsContext,
+      runFactCheck: options?.runFactCheck ?? true,
     })
 
     return result

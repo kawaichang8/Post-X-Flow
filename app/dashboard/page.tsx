@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { PostDraft } from "@/lib/ai-generator"
 import { 
   generatePostDrafts, 
+  generatePostDraftsAB,
   approveAndPostTweet, 
   savePostToHistory, 
   scheduleTweet, 
@@ -43,7 +44,7 @@ import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
 import { ImprovementSuggestionsCard } from "@/components/ImprovementSuggestionsCard"
 import { cn } from "@/lib/utils"
 import { StatsHeroBanner } from "@/components/StatsHeroBanner"
-import { UpgradeBanner } from "@/components/UpgradeBanner"
+import { ProCard } from "@/components/ProCard"
 import { UsageLimitWarning } from "@/components/ProFeatureLock"
 import { useSubscription } from "@/hooks/useSubscription"
 import { incrementGenerationCount } from "@/app/actions-subscription"
@@ -80,6 +81,9 @@ interface GeneratedPost {
   mediaUrl?: string
   mediaType?: "image" | "video"
   naturalness_score: number
+  fact_score?: number | null
+  fact_suggestions?: string[]
+  context_used?: boolean
 }
 
 function NewDashboardContent() {
@@ -119,6 +123,12 @@ function NewDashboardContent() {
   const [schedulingPost, setSchedulingPost] = useState<GeneratedPost | null>(null)
   const [scheduleDate, setScheduleDate] = useState("")
   const [postingScheduledId, setPostingScheduledId] = useState<string | null>(null)
+
+  // AB test: shared id for current session variations (set when generating in AB mode)
+  const [abTestId, setAbTestId] = useState<string | null>(null)
+
+  // Fact-check warning: show before post/schedule when fact_score < 70
+  const [pendingPostAction, setPendingPostAction] = useState<{ type: "post"; post: GeneratedPost } | { type: "schedule"; post: GeneratedPost; scheduleDate: string } | null>(null)
 
   // Subscription state
   const {
@@ -248,8 +258,8 @@ function NewDashboardContent() {
     }
   }, [searchParams, user, showToast])
 
-  // Generate posts
-  const handleGenerate = async (trend: string, purpose: string, aiProvider: string) => {
+  // Generate posts (abMode: Pro-only; contextMode/factCheck: toggles for RAG and fact-check)
+  const handleGenerate = async (trend: string, purpose: string, aiProvider: string, abMode?: boolean, contextMode?: boolean, factCheck?: boolean) => {
     if (!user) return
     
     // Check generation limit for free users
@@ -261,6 +271,7 @@ function NewDashboardContent() {
     setIsGenerating(true)
     setCurrentTrend(trend)
     setCurrentPurpose(purpose)
+    setAbTestId(null)
     
     try {
       // Increment usage count for free users
@@ -269,17 +280,38 @@ function NewDashboardContent() {
         refreshSubscription() // Refresh to update remaining count
       }
       
-      const draftsResult = await generatePostDrafts(trend, purpose, {
+      const genOptions = {
         userId: user.id,
         aiProvider: aiProvider as "grok" | "claude",
-      })
-      const generatedPosts: GeneratedPost[] = draftsResult.map((draft: PostDraft, index: number) => ({
-        id: `draft-${Date.now()}-${index}`,
-        content: draft.text,
-        naturalness_score: draft.naturalnessScore,
-      }))
-      setDrafts(generatedPosts)
-      showToast(`${generatedPosts.length}件の投稿案を作成しました`, "success")
+        contextMode: contextMode ?? true,
+        factCheck: factCheck ?? true,
+      }
+      if (isPro && abMode) {
+        const { drafts: draftsResult, abTestId: newAbTestId } = await generatePostDraftsAB(trend, purpose, genOptions)
+        setAbTestId(newAbTestId)
+        const generatedPosts: GeneratedPost[] = draftsResult.map((draft, index: number) => ({
+          id: `draft-${Date.now()}-${index}`,
+          content: draft.text,
+          naturalness_score: draft.naturalnessScore,
+          fact_score: draft.factScore,
+          fact_suggestions: draft.factSuggestions,
+          context_used: !!genOptions.contextMode,
+        }))
+        setDrafts(generatedPosts)
+        showToast(`${generatedPosts.length}案をABテスト用に作成しました（分析で比較できます）`, "success")
+      } else {
+        const draftsResult = await generatePostDrafts(trend, purpose, genOptions)
+        const generatedPosts: GeneratedPost[] = draftsResult.map((draft, index: number) => ({
+          id: `draft-${Date.now()}-${index}`,
+          content: draft.text,
+          naturalness_score: draft.naturalnessScore,
+          fact_score: draft.factScore,
+          fact_suggestions: draft.factSuggestions,
+          context_used: !!genOptions.contextMode,
+        }))
+        setDrafts(generatedPosts)
+        showToast(`${generatedPosts.length}件の投稿案を作成しました`, "success")
+      }
     } catch (error) {
       showToast("投稿の生成に失敗しました", "error")
     } finally {
@@ -287,17 +319,27 @@ function NewDashboardContent() {
     }
   }
 
-  // Post to Twitter
+  // Post to Twitter (with fact-check warning if score < 70)
   const handlePost = async (postId: string) => {
     const post = drafts.find(d => d.id === postId)
     if (!post || !selectedAccountId || !user) return
     
+    const factScore = post.fact_score ?? 100
+    if (factScore < 70) {
+      setPendingPostAction({ type: "post", post })
+      return
+    }
+    
+    await doPost(post)
+  }
+
+  const doPost = async (post: GeneratedPost) => {
+    if (!selectedAccountId || !user) return
     const account = await getTwitterAccountById(selectedAccountId, user.id)
     if (!account?.access_token) {
       showToast("選択されたアカウントのトークンが見つかりません", "error")
       return
     }
-    
     setIsPosting(true)
     try {
       const draft: PostDraft = {
@@ -311,12 +353,16 @@ function NewDashboardContent() {
         account.access_token,
         currentTrend,
         currentPurpose,
-        selectedAccountId
+        selectedAccountId,
+        {
+          ...(abTestId ? { abTestId } : {}),
+          contextUsed: post.context_used,
+          factScore: post.fact_score ?? undefined,
+        }
       )
-      
       if (result.success) {
         showToast("ツイートが投稿されました", "success")
-        setDrafts(prev => prev.filter(d => d.id !== postId))
+        setDrafts(prev => prev.filter(d => d.id !== post.id))
       } else {
         showToast(result.error || "ツイートの投稿に失敗しました", "error")
       }
@@ -327,19 +373,35 @@ function NewDashboardContent() {
     }
   }
 
-  // Schedule post (called when user confirms date in modal)
+  // Schedule post (called when user confirms date in modal; fact-check warning if score < 70)
   const handleScheduleConfirm = async () => {
     if (!schedulingPost || !user || !scheduleDate) return
-    const scheduledTime = new Date(scheduleDate)
+    const factScore = schedulingPost.fact_score ?? 100
+    if (factScore < 70) {
+      setPendingPostAction({ type: "schedule", post: schedulingPost, scheduleDate })
+      setSchedulingPost(null)
+      setScheduleDate("")
+      return
+    }
+      await doSchedule(schedulingPost, scheduleDate)
+  }
+
+  const doSchedule = async (post: GeneratedPost, dateStr: string) => {
+    if (!user) return
+    const scheduledTime = new Date(dateStr)
     const draft: PostDraft = {
-      text: schedulingPost.content,
-      naturalnessScore: schedulingPost.naturalness_score,
+      text: post.content,
+      naturalnessScore: post.naturalness_score,
       hashtags: [],
     }
     try {
-      await scheduleTweet(user.id, draft, scheduledTime, currentTrend, currentPurpose)
+      await scheduleTweet(user.id, draft, scheduledTime, currentTrend, currentPurpose, {
+        ...(abTestId ? { abTestId } : {}),
+        contextUsed: post.context_used,
+        factScore: post.fact_score ?? undefined,
+      })
       showToast(`${scheduledTime.toLocaleString("ja-JP")}に投稿予定です`, "success")
-      setDrafts(prev => prev.filter(d => d.id !== schedulingPost.id))
+      setDrafts(prev => prev.filter(d => d.id !== post.id))
       setSchedulingPost(null)
       setScheduleDate("")
     } catch (error) {
@@ -347,7 +409,7 @@ function NewDashboardContent() {
     }
   }
 
-  // Save draft
+  // Save draft (with context_used / fact_score for analytics)
   const handleSaveDraft = async (postId: string) => {
     const post = drafts.find(d => d.id === postId)
     if (!post || !user) return
@@ -358,11 +420,25 @@ function NewDashboardContent() {
       hashtags: [],
     }
     try {
-      await savePostToHistory(user.id, draft, currentTrend, currentPurpose, "draft")
+      await savePostToHistory(user.id, draft, currentTrend, currentPurpose, "draft", {
+        contextUsed: post.context_used,
+        factScore: post.fact_score ?? undefined,
+      })
       showToast("下書きを保存しました", "success")
     } catch (error) {
       showToast("保存中にエラーが発生しました", "error")
     }
+  }
+
+  // Confirm fact-check warning and run pending post/schedule
+  const handleConfirmFactWarning = async () => {
+    if (!pendingPostAction || !user) return
+    if (pendingPostAction.type === "post") {
+      await doPost(pendingPostAction.post)
+    } else {
+      await doSchedule(pendingPostAction.post, pendingPostAction.scheduleDate)
+    }
+    setPendingPostAction(null)
   }
 
   // Edit post content
@@ -447,6 +523,24 @@ function NewDashboardContent() {
       {showOnboarding && (
         <OnboardingTour onComplete={handleOnboardingComplete} />
       )}
+
+      {/* Fact-check warning (score < 70) before post/schedule */}
+      <AlertDialog open={!!pendingPostAction} onOpenChange={(open) => { if (!open) setPendingPostAction(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>事実確認スコアが70未満です</AlertDialogTitle>
+            <AlertDialogDescription>
+              この投稿には事実関係の確認が推奨される内容が含まれている可能性があります。投稿しますか？内容を編集してから投稿することをおすすめします。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmFactWarning}>
+              {pendingPostAction?.type === "schedule" ? "スケジュールする" : "投稿する"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Schedule date modal */}
       <AlertDialog open={!!schedulingPost} onOpenChange={(open) => { if (!open) { setSchedulingPost(null); setScheduleDate("") } }}>
@@ -575,14 +669,21 @@ function NewDashboardContent() {
                   }}
                 />
 
-                {/* Upgrade Banner for Free/Trial Users (hidden when NEXT_PUBLIC_UPGRADE_ENABLED=false) */}
+                {/* PRO plan card (Xboost-style) for Free/Trial Users */}
                 {!isPro && upgradeEnabled && (
-                  <UpgradeBanner
-                    trialDaysRemaining={trialDaysRemaining}
-                    generationsRemaining={generationsRemaining === Infinity ? 999 : generationsRemaining}
-                    generationsLimit={generationsLimit === Infinity ? 999 : generationsLimit}
+                  <ProCard
+                    config={{
+                      spotsLeft: 5,
+                      spotsTotal: 5,
+                      oldPrice: "¥66,000",
+                      price: "¥44,800",
+                      priceUnit: "/3ヶ月",
+                      userCountLabel: "90人がPRO利用中",
+                      currentPlan: "Free",
+                    }}
                     onUpgrade={handleUpgrade}
-                    variant={isTrialActive ? "compact" : "default"}
+                    variant="default"
+                    showAsUpgrade={true}
                   />
                 )}
 
@@ -603,6 +704,7 @@ function NewDashboardContent() {
                       userId={user?.id ?? null}
                       selectedAccountId={selectedAccountId}
                       onTrendsError={(msg) => showToast(msg, "error")}
+                      isPro={isPro}
                     />
                   </CardContent>
                 </Card>

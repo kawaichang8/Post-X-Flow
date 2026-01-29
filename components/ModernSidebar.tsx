@@ -1,6 +1,6 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { 
   Home,
@@ -62,6 +62,7 @@ export function ModernSidebar({
   onUpgrade,
 }: ModernSidebarProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   
@@ -79,7 +80,9 @@ export function ModernSidebar({
   }, [])
 
   const handleNavClick = (view: string) => {
-    if (onNavigate) {
+    if (view === "analytics") {
+      router.push("/analytics")
+    } else if (onNavigate) {
       onNavigate(view)
     }
     setIsMobileOpen(false)
@@ -147,7 +150,7 @@ export function ModernSidebar({
 
   const NavItem = ({ item, isBottom = false }: { item: typeof mainNavItems[0] | typeof bottomNavItems[0]; isBottom?: boolean }) => {
     const Icon = item.icon
-    const isActive = !isBottom && activeView === item.id
+    const isActive = !isBottom && (item.id === "analytics" ? pathname === "/analytics" : activeView === item.id)
     const onClick = isBottom ? (item as typeof bottomNavItems[0]).onClick : () => handleNavClick(item.id)
 
     const button = (

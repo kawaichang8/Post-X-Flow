@@ -35,7 +35,9 @@ import {
   Copy,
   CheckCircle2,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  Flag,
 } from "lucide-react"
 
 interface GeneratedPost {
@@ -44,6 +46,9 @@ interface GeneratedPost {
   mediaUrl?: string
   mediaType?: "image" | "video"
   naturalness_score: number
+  fact_score?: number | null
+  fact_suggestions?: string[]
+  context_used?: boolean
 }
 
 interface PostGenerationCardProps {
@@ -350,6 +355,44 @@ export function PostGenerationCard({
                 </div>
               </div>
             </div>
+
+            {/* Fact-check score (when available) */}
+            {post.fact_score != null && (
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium transition-colors",
+                        post.fact_score >= 70
+                          ? "bg-green-500/10 text-green-700 dark:text-green-300 hover:bg-green-500/20"
+                          : "bg-red-500/10 text-red-700 dark:text-red-300 hover:bg-red-500/20"
+                      )}
+                    >
+                      {post.fact_score >= 70 ? (
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                      ) : (
+                        <Flag className="h-3.5 w-3.5" />
+                      )}
+                      <span>事実 {post.fact_score}</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[280px] rounded-xl p-3 text-sm" side="top">
+                    <p className="font-medium mb-1">事実確認スコア: {post.fact_score}/100</p>
+                    {post.fact_suggestions && post.fact_suggestions.length > 0 ? (
+                      <ul className="list-disc list-inside text-muted-foreground space-y-0.5 text-xs">
+                        {post.fact_suggestions.map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">特記事項なし</p>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons - Premium */}

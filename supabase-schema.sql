@@ -203,6 +203,46 @@ BEGIN
   ) THEN
     ALTER TABLE post_history ADD COLUMN twitter_account_id UUID REFERENCES user_twitter_tokens(id) ON DELETE SET NULL;
   END IF;
+
+  -- Auto-retweet: original tweet being retweeted
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'post_history' AND column_name = 'original_tweet_id'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN original_tweet_id TEXT;
+  END IF;
+
+  -- Auto-retweet: 'simple' = RT only, 'quote' = quote RT with text as comment
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'post_history' AND column_name = 'retweet_type'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN retweet_type TEXT CHECK (retweet_type IS NULL OR retweet_type IN ('simple', 'quote'));
+  END IF;
+
+  -- AB testing: group variations for comparison (same ab_test_id = same test)
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'post_history' AND column_name = 'ab_test_id'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN ab_test_id UUID;
+  END IF;
+
+  -- Context mode: whether past-post RAG was used for this generation
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'post_history' AND column_name = 'context_used'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN context_used BOOLEAN DEFAULT false;
+  END IF;
+
+  -- Fact-check score (0-100) from AI fact-check step
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'post_history' AND column_name = 'fact_score'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN fact_score INTEGER CHECK (fact_score IS NULL OR (fact_score >= 0 AND fact_score <= 100));
+  END IF;
 END $$;
 
 -- Table: quoted_tweets
@@ -261,6 +301,7 @@ CREATE INDEX IF NOT EXISTS idx_post_history_user_id ON post_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_post_history_created_at ON post_history(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_history_status ON post_history(status);
 CREATE INDEX IF NOT EXISTS idx_post_history_engagement ON post_history(engagement_score DESC);
+CREATE INDEX IF NOT EXISTS idx_post_history_ab_test_id ON post_history(ab_test_id) WHERE ab_test_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_user_twitter_tokens_user_id ON user_twitter_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_twitter_tokens_user_id_is_default ON user_twitter_tokens(user_id, is_default);
 

@@ -189,14 +189,141 @@ ${userContext ? `- ユーザーの追加コンテキスト: ${userContext}` : ""
   }
 }
 
-// Post quote RT
-export async function postQuoteRT(
+// Safety: max auto-retweets per 24h to avoid spam risk
+const MAX_RETWEETS_PER_24H = 10
+
+export async function getRetweetCountLast24h(userId: string): Promise<number> {
+  try {
+    const supabase = createServerClient()
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { count, error } = await supabase
+      .from("post_history")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .not("original_tweet_id", "is", null)
+      .gte("created_at", since)
+    if (error) return 0
+    return count ?? 0
+  } catch {
+    return 0
+  }
+}
+
+export async function scheduleRetweet(
   userId: string,
-  text: string,
-  quoteTweetId: string,
+  originalTweetId: string,
+  type: "simple" | "quote",
+  options: {
+    comment?: string
+    scheduledFor?: Date
+    twitterAccountId?: string
+  }
+): Promise<{ success: boolean; postHistoryId?: string; error?: string }> {
+  try {
+    const count = await getRetweetCountLast24h(userId)
+    if (count >= MAX_RETWEETS_PER_24H) {
+      return {
+        success: false,
+        error: `24時間あたりの自動リツイート上限（${MAX_RETWEETS_PER_24H}回）に達しています。しばらくしてからお試しください。`,
+      }
+    }
+
+    const supabase = createServerClient()
+    const scheduledFor = options.scheduledFor ?? new Date()
+    const text = type === "quote" ? (options.comment?.trim() || "👍") : ""
+    const { data: row, error } = await supabase
+      .from("post_history")
+      .insert({
+        user_id: userId,
+        text,
+        hashtags: [],
+        naturalness_score: null,
+        trend: null,
+        purpose: null,
+        status: "scheduled",
+        scheduled_for: scheduledFor.toISOString(),
+        original_tweet_id: originalTweetId,
+        retweet_type: type,
+      })
+      .select("id")
+      .single()
+
+    if (error) {
+      console.error("scheduleRetweet insert error:", error)
+      return { success: false, error: "予約の保存に失敗しました。" }
+    }
+    return { success: true, postHistoryId: row.id }
+  } catch (e) {
+    console.error("scheduleRetweet error:", e)
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "自動リツイートの予約に失敗しました。",
+    }
+  }
+}
+
+// Post simple retweet immediately (no comment)
+export async function postSimpleRetweet(
+  userId: string,
+  targetTweetId: string,
   accessToken: string,
   twitterAccountId?: string
-): Promise<{ success: boolean; tweetId?: string; error?: string }> {
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const count = await getRetweetCountLast24h(userId)
+    if (count >= MAX_RETWEETS_PER_24H) {
+      return {
+        success: false,
+        error: `24時間あたりの自動リツイート上限（${MAX_RETWEETS_PER_24H}回）に達しています。`,
+      }
+    }
+    const { postRetweet, refreshTwitterAccessToken } = await import("@/lib/x-post")
+    const supabase = createServerClient()
+    let currentAccessToken = accessToken
+    try {
+      await postRetweet(targetTweetId, currentAccessToken)
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "code" in err && (err as { code?: number }).code === 401) {
+        const { data: tokenData } = await supabase
+          .from("user_twitter_tokens")
+          .select("refresh_token")
+          .eq("user_id", userId)
+          .single()
+        if (!tokenData?.refresh_token) {
+          return { success: false, error: "Twitter認証エラー。再連携してください。" }
+        }
+        const { accessToken: newToken, refreshToken: newRefresh } = await refreshTwitterAccessToken(tokenData.refresh_token)
+        await supabase
+          .from("user_twitter_tokens")
+          .update({ access_token: newToken, refresh_token: newRefresh, updated_at: new Date().toISOString() })
+          .eq("user_id", userId)
+        currentAccessToken = newToken
+        await postRetweet(targetTweetId, currentAccessToken)
+      } else {
+        throw err
+      }
+    }
+    await supabase.from("post_history").insert({
+      user_id: userId,
+      text: "",
+      status: "posted",
+      tweet_id: null,
+      twitter_account_id: twitterAccountId || null,
+      original_tweet_id: targetTweetId,
+      retweet_type: "simple",
+    })
+    return { success: true }
+  } catch (e: unknown) {
+    console.error("postSimpleRetweet error:", e)
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "リツイートに失敗しました。",
+    }
+  }
+}
+
+// Post quote RT
+export async function postQuoteRT(
   try {
     const { postTweet, refreshTwitterAccessToken } = await import("@/lib/x-post")
     const supabase = createServerClient()
