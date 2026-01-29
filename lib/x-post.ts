@@ -393,25 +393,25 @@ let cachedAppOnlyBearerToken: string | null = null
 let cachedAppOnlyBearerTokenExpiry = 0
 const BEARER_TOKEN_CACHE_MS = 50 * 60 * 1000 // 50 min (tokens often valid 2h)
 
+const BEARER_TOKEN_HELP =
+  'Developer Portal の Keys and tokens で Bearer Token をコピーし、環境変数 TWITTER_BEARER_TOKEN に設定してください。ローカルは .env.local、本番（Vercel）は Vercel の Environment Variables に追加し、再デプロイしてください。'
+
 export async function getAppOnlyBearerToken(): Promise<string> {
-  // 1) 環境変数で Bearer Token が指定されていればそれを使う（Developer Portal の Keys and tokens からコピー可能）
+  // 環境変数で Bearer Token が指定されていればそれを使う（推奨。403 回避）
   const envBearer = (process.env.TWITTER_BEARER_TOKEN || process.env.BEARER_TOKEN || '').trim()
   if (envBearer) {
     return envBearer
   }
 
+  // TWITTER_BEARER_TOKEN 未設定時は client_credentials を試す（403 になりやすい場合は上記を設定すること）
   if (cachedAppOnlyBearerToken && Date.now() < cachedAppOnlyBearerTokenExpiry) {
     return cachedAppOnlyBearerToken
   }
 
-  // 2) Client Credentials で取得（API Key/Secret または Client ID/Secret を使用）
-  // X の oauth2/token は API Key と API Key Secret で Basic 認証する場合あり。未設定時は Client ID/Secret で試行
   const apiKey = (process.env.TWITTER_API_KEY || process.env.TWITTER_CLIENT_ID || '').trim()
   const apiSecret = (process.env.TWITTER_API_SECRET || process.env.TWITTER_CLIENT_SECRET || '').trim()
   if (!apiKey || !apiSecret) {
-    throw new Error(
-      'アプリ認証トークンの取得に失敗しました: TWITTER_BEARER_TOKEN を設定するか、TWITTER_API_KEY と TWITTER_API_SECRET（または TWITTER_CLIENT_ID と TWITTER_CLIENT_SECRET）を設定してください。Developer Portal の Keys and tokens で Bearer Token をコピーして TWITTER_BEARER_TOKEN に設定すると簡単です。'
-    )
+    throw new Error(`トレンド取得には TWITTER_BEARER_TOKEN が必要です。${BEARER_TOKEN_HELP}`)
   }
 
   const basicAuth = Buffer.from(`${apiKey}:${apiSecret}`, 'utf8').toString('base64')
@@ -432,6 +432,9 @@ export async function getAppOnlyBearerToken(): Promise<string> {
       if (!response.ok) {
         lastError = `${response.status}: ${text}`
         console.warn('[AppOnlyBearer]', endpoint, lastError)
+        if (response.status === 403) {
+          throw new Error(`トレンド取得には TWITTER_BEARER_TOKEN の設定が必要です（403 のため）。${BEARER_TOKEN_HELP}`)
+        }
         continue
       }
       const data = JSON.parse(text)
@@ -444,14 +447,13 @@ export async function getAppOnlyBearerToken(): Promise<string> {
       cachedAppOnlyBearerTokenExpiry = Date.now() + BEARER_TOKEN_CACHE_MS
       return token
     } catch (e) {
+      if (e instanceof Error && e.message.includes('TWITTER_BEARER_TOKEN')) throw e
       lastError = e instanceof Error ? e.message : String(e)
       console.warn('[AppOnlyBearer]', endpoint, lastError)
     }
   }
 
-  throw new Error(
-    `アプリ認証トークンの取得に失敗しました: ${lastError}. Developer Portal の Keys and tokens で Bearer Token をコピーし、環境変数 TWITTER_BEARER_TOKEN に設定してください。`
-  )
+  throw new Error(`アプリ認証トークンの取得に失敗しました。${BEARER_TOKEN_HELP} エラー: ${lastError}`)
 }
 
 // Get trending topics (Japan - WOEID: 23424856)
