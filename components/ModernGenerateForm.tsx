@@ -1,7 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -27,11 +26,19 @@ import {
   Info,
   Zap,
   Settings2,
+  RefreshCw,
 } from "lucide-react"
+import { getTrendsForUser } from "@/app/actions"
+
+export type TrendItem = { name: string; query?: string; tweetVolume?: number | null }
 
 interface ModernGenerateFormProps {
   onGenerate: (trend: string, purpose: string, aiProvider: string) => Promise<void>
   isLoading?: boolean
+  /** When set with X connected, shows "トレンドを取得" and trend list */
+  userId?: string | null
+  selectedAccountId?: string | null
+  onTrendsError?: (message: string) => void
 }
 
 const purposes = [
@@ -50,11 +57,33 @@ const aiProviders = [
 export function ModernGenerateForm({
   onGenerate,
   isLoading = false,
+  userId,
+  selectedAccountId,
+  onTrendsError,
 }: ModernGenerateFormProps) {
   const [trend, setTrend] = useState("")
   const [purpose, setPurpose] = useState("engagement")
   const [aiProvider, setAiProvider] = useState("grok")
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [trends, setTrends] = useState<TrendItem[]>([])
+  const [isLoadingTrends, setIsLoadingTrends] = useState(false)
+
+  const loadTrends = useCallback(async () => {
+    if (!userId) return
+    setIsLoadingTrends(true)
+    setTrends([])
+    try {
+      const list = await getTrendsForUser(userId, selectedAccountId ?? undefined)
+      setTrends(list)
+      if (list.length === 0 && onTrendsError) {
+        onTrendsError("トレンドを取得できませんでした。X連携とアカウントを確認するか、手動で入力してください。")
+      }
+    } catch (e) {
+      if (onTrendsError) onTrendsError("トレンドの取得に失敗しました。しばらくしてから再度お試しください。")
+    } finally {
+      setIsLoadingTrends(false)
+    }
+  }, [userId, selectedAccountId, onTrendsError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -112,6 +141,49 @@ export function ModernGenerateForm({
                   required
                 />
               </div>
+              {userId && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl h-8"
+                    onClick={loadTrends}
+                    disabled={isLoadingTrends}
+                  >
+                    {isLoadingTrends ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    トレンドを取得
+                  </Button>
+                  {trends.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      日本トレンド {trends.length}件 — クリックで入力
+                    </span>
+                  )}
+                </div>
+              )}
+              {trends.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {trends.map((t) => (
+                    <button
+                      key={t.name}
+                      type="button"
+                      onClick={() => setTrend(t.name)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-sm border transition-colors",
+                        trend === t.name
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted/50 border-border hover:bg-muted"
+                      )}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Purpose Select */}

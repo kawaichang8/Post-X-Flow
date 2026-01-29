@@ -649,6 +649,25 @@ export async function getTrends(accessToken: string): Promise<Trend[]> {
   }
 }
 
+// Get trending topics for the current user (uses default or specified account token server-side)
+export async function getTrendsForUser(userId: string, accountId?: string): Promise<Trend[]> {
+  try {
+    const supabaseAdmin = createServerClient()
+    const base = supabaseAdmin
+      .from("user_twitter_tokens")
+      .select("access_token")
+      .eq("user_id", userId)
+    const { data, error } = accountId
+      ? await base.eq("id", accountId).maybeSingle()
+      : await base.eq("is_default", true).maybeSingle()
+    if (error || !data?.access_token) return []
+    return await getTrends(data.access_token)
+  } catch (error) {
+    console.error("Error fetching trends for user:", error)
+    return []
+  }
+}
+
 // Get unique purposes used by a user (for suggestions)
 export async function getUserPurposes(userId: string): Promise<string[]> {
   try {

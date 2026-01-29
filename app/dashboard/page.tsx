@@ -517,6 +517,9 @@ function NewDashboardContent() {
                     <ModernGenerateForm
                       onGenerate={handleGenerate}
                       isLoading={isGenerating}
+                      userId={user?.id ?? null}
+                      selectedAccountId={selectedAccountId}
+                      onTrendsError={(msg) => showToast(msg, "error")}
                     />
                   </CardContent>
                 </Card>
