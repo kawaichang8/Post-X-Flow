@@ -324,6 +324,12 @@ export async function postSimpleRetweet(
 
 // Post quote RT
 export async function postQuoteRT(
+  userId: string,
+  text: string,
+  quoteTweetId: string,
+  accessToken: string,
+  twitterAccountId?: string
+): Promise<{ success: boolean; tweetId?: string; error?: string }> {
   try {
     const { postTweet, refreshTwitterAccessToken } = await import("@/lib/x-post")
     const supabase = createServerClient()

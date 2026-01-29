@@ -294,7 +294,7 @@ export async function generateOptimizedVersion(
     return {
       improvedText: result.improvedText,
       expectedImpressionsLiftPercent,
-      reason: result.reason || undefined,
+      reason: result.explanation || undefined,
     }
   } catch (e) {
     console.error("generateOptimizedVersion error:", e)
