@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useState, useCallback, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { PostDraft } from "@/lib/ai-generator"
@@ -11,6 +11,7 @@ import {
   scheduleTweet, 
   getScheduledTweets, 
   deleteScheduledTweet,
+  getPostHistory,
   getTwitterAccounts, 
   getDefaultTwitterAccount, 
   getTwitterAccountById,
@@ -45,8 +46,9 @@ import { UpgradeBanner } from "@/components/UpgradeBanner"
 import { UsageLimitWarning } from "@/components/ProFeatureLock"
 import { useSubscription } from "@/hooks/useSubscription"
 import { incrementGenerationCount } from "@/app/actions-subscription"
-import { Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { Loader2, RefreshCw, Sparkles, History, Heart, Eye } from "lucide-react"
 import Link from "next/link"
+import { Badge } from "@/components/ui/badge"
 
 interface PostHistoryItem {
   id: string
@@ -60,6 +62,10 @@ interface PostHistoryItem {
   scheduled_for: string | null
   created_at: string
   twitter_account_id: string | null
+  engagement_score?: number
+  impression_count?: number | null
+  like_count?: number
+  retweet_count?: number
 }
 
 interface User {
@@ -102,6 +108,8 @@ function NewDashboardContent() {
   // History and scheduled
   const [postHistory, setPostHistory] = useState<PostHistoryItem[]>([])
   const [scheduledTweets, setScheduledTweets] = useState<PostHistoryItem[]>([])
+  const [historyList, setHistoryList] = useState<PostHistoryItem[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -139,6 +147,25 @@ function NewDashboardContent() {
       getScheduledTweets(user.id).then(setScheduledTweets)
     }
   }, [activeView, user])
+
+  // Load post history when history view is active
+  const loadHistory = useCallback(async () => {
+    if (!user) return
+    setLoadingHistory(true)
+    try {
+      const data = await getPostHistory(user.id, 50, selectedAccountId || undefined)
+      setHistoryList(data as PostHistoryItem[])
+    } catch (e) {
+      console.error("Failed to load post history:", e)
+      showToast("投稿履歴の取得に失敗しました", "error")
+    } finally {
+      setLoadingHistory(false)
+    }
+  }, [user, selectedAccountId, showToast])
+
+  useEffect(() => {
+    if (activeView === "history" && user) loadHistory()
+  }, [activeView, user, loadHistory])
 
   // Check user session
   useEffect(() => {
@@ -629,17 +656,98 @@ function NewDashboardContent() {
 
             {/* History View */}
             {activeView === "history" && (
-              <Card>
+              <Card className="rounded-2xl border-0 shadow-lg overflow-hidden">
                 <CardHeader>
-                  <CardTitle>投稿履歴</CardTitle>
-                  <CardDescription>
-                    過去に作成・投稿した内容の一覧
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>投稿履歴</CardTitle>
+                      <CardDescription>
+                        過去に生成・投稿した内容の一覧
+                      </CardDescription>
+                    </div>
+                    {user && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={loadHistory}
+                        disabled={loadingHistory}
+                        className="rounded-xl"
+                      >
+                        <RefreshCw className={cn("h-4 w-4 mr-1.5", loadingHistory && "animate-spin")} />
+                        更新
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground text-center py-8">
-                    投稿履歴機能は準備中です
-                  </p>
+                <CardContent className="space-y-4">
+                  {loadingHistory && (
+                    <div className="space-y-3">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="p-4 rounded-xl border space-y-3">
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-3/4" />
+                          <div className="flex gap-2">
+                            <Skeleton className="h-6 w-16 rounded-lg" />
+                            <Skeleton className="h-6 w-20 rounded-lg" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!loadingHistory && historyList.length === 0 && (
+                    <div className="text-center py-12">
+                      <History className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        履歴がありません。ツイートを生成すると履歴に保存されます。
+                      </p>
+                    </div>
+                  )}
+                  {!loadingHistory && historyList.length > 0 && (
+                    <div className="space-y-3">
+                      {historyList.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-4 rounded-xl border bg-card hover:bg-muted/30 transition-colors"
+                        >
+                          <p className="text-sm text-foreground line-clamp-2 mb-2">{item.text}</p>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <Badge
+                              variant={item.status === "posted" ? "default" : item.status === "scheduled" ? "secondary" : "outline"}
+                              className="rounded-lg font-normal"
+                            >
+                              {item.status === "draft" && "下書き"}
+                              {item.status === "posted" && "投稿済み"}
+                              {item.status === "scheduled" && "スケジュール済み"}
+                              {item.status === "deleted" && "削除済み"}
+                            </Badge>
+                            <span>
+                              {new Date(item.created_at).toLocaleString("ja-JP", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            {(item.like_count != null && item.like_count > 0) && (
+                              <span className="flex items-center gap-0.5">
+                                <Heart className="h-3 w-3" />
+                                {item.like_count}
+                              </span>
+                            )}
+                            {(item.impression_count != null && item.impression_count > 0) && (
+                              <span className="flex items-center gap-0.5">
+                                <Eye className="h-3 w-3" />
+                                {item.impression_count.toLocaleString()}
+                              </span>
+                            )}
+                            {item.trend && (
+                              <span className="text-muted-foreground/80">#{item.trend.replace(/^#/, "")}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
