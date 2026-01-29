@@ -400,63 +400,59 @@ export async function getTrendingTopics(
   woeid: number = 23424856 // Japan
 ): Promise<Trend[]> {
   try {
-    const client = new TwitterApi(accessToken)
-    
-    // Try using twitter-api-v2's v1 client for trends
-    // Note: OAuth 2.0 user context tokens may work with v1.1 endpoints
-    try {
-      // Access v1 client through the readWrite client
-      const trendsData = await client.v1.get('trends/place.json', {
-        id: woeid,
-      })
+    // Use X API v2: GET /2/trends/by/woeid/{woeid}
+    // Free plan supports v2, so this should work
+    const maxTrends = 10 // Get top 10
+    const url = new URL(`https://api.x.com/2/trends/by/woeid/${woeid}`)
+    url.searchParams.set('max_trends', String(maxTrends))
+    url.searchParams.set('trend.fields', 'trend_name,tweet_count')
 
-      if (trendsData && Array.isArray(trendsData) && trendsData[0] && trendsData[0].trends) {
-        return processTrends(trendsData[0].trends)
-      }
-    } catch (v1Error) {
-      console.warn('v1 trends endpoint failed, trying direct API call:', v1Error)
-      
-      // Fallback: Direct API call
-      try {
-        const response = await fetch(
-          `https://api.twitter.com/1.1/trends/place.json?id=${woeid}`,
-          {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-            },
-          }
-        )
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    })
 
-        if (response.ok) {
-          const trendsData = await response.json()
-          
-          if (trendsData && Array.isArray(trendsData) && trendsData[0] && trendsData[0].trends) {
-            return processTrends(trendsData[0].trends)
-          }
-        }
-      } catch (fetchError) {
-        console.warn('Direct API call also failed:', fetchError)
-      }
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '')
+      console.error('X API v2 trends error:', response.status, errorText)
+      throw new Error(`X API v2 トレンド取得エラー: ${response.status}`)
     }
 
-    // 最新トレンドが取れない場合はエラー（固定リストは返さない）
-    throw new Error('最新のトレンドを取得できませんでした。しばらくしてから再度お試しください。')
+    const data = await response.json()
+
+    // v2 response format: { data: [{ trend_name, tweet_count }], errors?: [...] }
+    if (data.errors && data.errors.length > 0) {
+      console.error('X API v2 trends errors:', data.errors)
+      throw new Error(`X API v2 エラー: ${data.errors.map((e: any) => e.detail || e.title).join(', ')}`)
+    }
+
+    if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+      throw new Error('トレンドデータが空です')
+    }
+
+    return processTrendsV2(data.data)
   } catch (error) {
     if (error instanceof Error && error.message.includes('最新のトレンドを取得できませんでした')) throw error
-    console.error('Error fetching trending topics:', error)
+    if (error instanceof Error) {
+      console.error('Error fetching trending topics (v2):', error.message)
+      throw new Error(`最新のトレンドを取得できませんでした: ${error.message}`)
+    }
+    console.error('Error fetching trending topics (v2):', error)
     throw new Error('最新のトレンドを取得できませんでした。しばらくしてから再度お試しください。')
   }
 }
 
-function processTrends(trends: any[]): Trend[] {
+// Process v2 trends response: { trend_name, tweet_count }[]
+function processTrendsV2(trends: any[]): Trend[] {
   return trends
-    .filter((trend: any) => trend.name)
-    .slice(0, 10) // Get top 10 trends
+    .filter((trend: any) => trend.trend_name)
     .map((trend: any) => ({
-      name: trend.name,
-      query: trend.query || trend.name,
-      tweetVolume: trend.tweet_volume || null,
+      name: trend.trend_name,
+      query: trend.trend_name, // v2 doesn't have separate query field, use trend_name
+      tweetVolume: trend.tweet_count ?? null,
     }))
 }
 
