@@ -405,7 +405,12 @@ export async function getTrendingTopics(
     const maxTrends = 10 // Get top 10
     const url = new URL(`https://api.x.com/2/trends/by/woeid/${woeid}`)
     url.searchParams.set('max_trends', String(maxTrends))
-    url.searchParams.set('trend.fields', 'trend_name,tweet_count')
+    // trend.fields: array format in docs, but URL query uses comma-separated string
+    // Try without trend.fields first (default fields might be returned)
+    // If needed, we can add: url.searchParams.set('trend.fields', 'trend_name,tweet_count')
+
+    console.log('[Trends v2] Request URL:', url.toString())
+    console.log('[Trends v2] WOEID:', woeid)
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -415,32 +420,57 @@ export async function getTrendingTopics(
       },
     })
 
+    console.log('[Trends v2] Response status:', response.status, response.statusText)
+
     if (!response.ok) {
       const errorText = await response.text().catch(() => '')
-      console.error('X API v2 trends error:', response.status, errorText)
-      throw new Error(`X API v2 トレンド取得エラー: ${response.status}`)
+      console.error('[Trends v2] Error response:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+      })
+      
+      // Try to parse error JSON
+      let errorDetail = errorText
+      try {
+        const errorJson = JSON.parse(errorText)
+        if (errorJson.errors && Array.isArray(errorJson.errors)) {
+          errorDetail = errorJson.errors.map((e: any) => e.detail || e.title || JSON.stringify(e)).join(', ')
+        } else if (errorJson.detail) {
+          errorDetail = errorJson.detail
+        }
+      } catch {
+        // Keep original errorText
+      }
+      
+      throw new Error(`X API v2 トレンド取得エラー (${response.status}): ${errorDetail}`)
     }
 
     const data = await response.json()
+    console.log('[Trends v2] Response data:', JSON.stringify(data).substring(0, 500))
 
     // v2 response format: { data: [{ trend_name, tweet_count }], errors?: [...] }
     if (data.errors && data.errors.length > 0) {
-      console.error('X API v2 trends errors:', data.errors)
-      throw new Error(`X API v2 エラー: ${data.errors.map((e: any) => e.detail || e.title).join(', ')}`)
+      console.error('[Trends v2] API errors in response:', data.errors)
+      const errorMessages = data.errors.map((e: any) => e.detail || e.title || JSON.stringify(e)).join(', ')
+      throw new Error(`X API v2 エラー: ${errorMessages}`)
     }
 
     if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+      console.warn('[Trends v2] Empty data array in response')
       throw new Error('トレンドデータが空です')
     }
 
-    return processTrendsV2(data.data)
+    const processed = processTrendsV2(data.data)
+    console.log('[Trends v2] Processed trends:', processed.length)
+    return processed
   } catch (error) {
     if (error instanceof Error && error.message.includes('最新のトレンドを取得できませんでした')) throw error
     if (error instanceof Error) {
-      console.error('Error fetching trending topics (v2):', error.message)
+      console.error('[Trends v2] Error fetching trending topics:', error.message, error.stack)
       throw new Error(`最新のトレンドを取得できませんでした: ${error.message}`)
     }
-    console.error('Error fetching trending topics (v2):', error)
+    console.error('[Trends v2] Unknown error fetching trending topics:', error)
     throw new Error('最新のトレンドを取得できませんでした。しばらくしてから再度お試しください。')
   }
 }
