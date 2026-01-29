@@ -11,6 +11,7 @@ import {
   scheduleTweet, 
   getScheduledTweets, 
   deleteScheduledTweet,
+  postScheduledTweet,
   getPostHistory,
   getTwitterAccounts, 
   getDefaultTwitterAccount, 
@@ -46,7 +47,7 @@ import { UpgradeBanner } from "@/components/UpgradeBanner"
 import { UsageLimitWarning } from "@/components/ProFeatureLock"
 import { useSubscription } from "@/hooks/useSubscription"
 import { incrementGenerationCount } from "@/app/actions-subscription"
-import { Loader2, RefreshCw, Sparkles, History, Heart, Eye } from "lucide-react"
+import { Loader2, RefreshCw, Sparkles, History, Heart, Eye, Bell, Send } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 
@@ -117,6 +118,7 @@ function NewDashboardContent() {
   // Schedule modal (when user clicks schedule on a post)
   const [schedulingPost, setSchedulingPost] = useState<GeneratedPost | null>(null)
   const [scheduleDate, setScheduleDate] = useState("")
+  const [postingScheduledId, setPostingScheduledId] = useState<string | null>(null)
 
   // Subscription state
   const {
@@ -154,12 +156,21 @@ function NewDashboardContent() {
     }
   }, [searchParams, showToast, refreshSubscription])
 
-  // Load scheduled tweets when calendar view is active
+  // Load scheduled tweets when user is set (for due banner) and when calendar view is active (refresh)
+  const loadScheduledTweets = useCallback(() => {
+    if (!user) return
+    getScheduledTweets(user.id).then(setScheduledTweets)
+  }, [user])
+
+  useEffect(() => {
+    if (user) loadScheduledTweets()
+  }, [user, loadScheduledTweets])
+
   useEffect(() => {
     if ((activeView === "calendar" || activeView === "scheduled") && user) {
-      getScheduledTweets(user.id).then(setScheduledTweets)
+      loadScheduledTweets()
     }
-  }, [activeView, user])
+  }, [activeView, user, loadScheduledTweets])
 
   // Load post history when history view is active
   const loadHistory = useCallback(async () => {
@@ -361,6 +372,30 @@ function NewDashboardContent() {
     ))
   }
 
+  // Post a scheduled tweet now (semi-auto: user clicks "投稿する")
+  const handlePostScheduled = async (postId: string) => {
+    if (!user) return
+    setPostingScheduledId(postId)
+    try {
+      const result = await postScheduledTweet(user.id, postId, selectedAccountId ?? undefined)
+      if (result.success) {
+        showToast("投稿しました", "success")
+        loadScheduledTweets()
+      } else {
+        showToast(result.error ?? "投稿に失敗しました", "error")
+      }
+    } catch (e) {
+      showToast("投稿中にエラーが発生しました", "error")
+    } finally {
+      setPostingScheduledId(null)
+    }
+  }
+
+  // Due scheduled posts (scheduled_for <= now) — show "予約投稿の時刻です" banner
+  const dueScheduled = scheduledTweets.filter(
+    (p) => p.status === "scheduled" && p.scheduled_for && new Date(p.scheduled_for) <= new Date()
+  )
+
   // Connect Twitter: redirect to OAuth start (server stores session and redirects to X)
   const handleConnectTwitter = () => {
     if (!user?.id) {
@@ -463,6 +498,54 @@ function NewDashboardContent() {
         {/* Main Content */}
         <main className="flex-1 min-h-screen p-4 md:p-6 lg:p-8 ml-20 md:ml-[280px] transition-all duration-300">
           <div className="max-w-6xl mx-auto space-y-6">
+
+            {/* Due scheduled posts banner (semi-auto: 通知 → ユーザーが押して投稿) */}
+            {dueScheduled.length > 0 && user && (
+              <Card className="rounded-2xl border-amber-500/30 bg-amber-50/80 dark:bg-amber-950/30 dark:border-amber-500/20 overflow-hidden">
+                <CardContent className="p-4 md:p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                      <Bell className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-amber-900 dark:text-amber-100">
+                        予約投稿の時刻です（{dueScheduled.length}件）
+                      </h3>
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        クリックしてXに投稿します
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="space-y-2">
+                    {dueScheduled.map((p) => (
+                      <li
+                        key={p.id}
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 rounded-xl bg-white/60 dark:bg-black/20 border border-amber-200/50 dark:border-amber-800/50"
+                      >
+                        <p className="text-sm text-foreground line-clamp-2 flex-1 min-w-0">
+                          {p.text}
+                        </p>
+                        <Button
+                          size="sm"
+                          className="rounded-xl shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+                          onClick={() => handlePostScheduled(p.id)}
+                          disabled={postingScheduledId === p.id}
+                        >
+                          {postingScheduledId === p.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Send className="h-4 w-4 mr-1.5" />
+                              投稿する
+                            </>
+                          )}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
             
             {/* Create View */}
             {activeView === "create" && (

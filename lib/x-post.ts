@@ -440,12 +440,12 @@ export async function getTrendingTopics(
       }
     }
 
-    // If all methods fail, return fallback
-    return getTrendingTopicsFallback()
+    // 最新トレンドが取れない場合はエラー（固定リストは返さない）
+    throw new Error('最新のトレンドを取得できませんでした。しばらくしてから再度お試しください。')
   } catch (error) {
+    if (error instanceof Error && error.message.includes('最新のトレンドを取得できませんでした')) throw error
     console.error('Error fetching trending topics:', error)
-    // Return fallback - graceful degradation
-    return getTrendingTopicsFallback()
+    throw new Error('最新のトレンドを取得できませんでした。しばらくしてから再度お試しください。')
   }
 }
 
@@ -458,22 +458,6 @@ function processTrends(trends: any[]): Trend[] {
       query: trend.query || trend.name,
       tweetVolume: trend.tweet_volume || null,
     }))
-}
-
-// Fallback: Get popular topics (if trends endpoint is not available)
-function getTrendingTopicsFallback(): Trend[] {
-  // Popular Japanese hashtags and topics as fallback
-  // These are commonly trending topics that users might want to use
-  return [
-    { name: '#日曜劇場リブート', query: '#日曜劇場リブート', tweetVolume: null },
-    { name: '#乃木坂工事中', query: '#乃木坂工事中', tweetVolume: null },
-    { name: '鈴木亮平', query: '鈴木亮平', tweetVolume: null },
-    { name: '#AI', query: '#AI', tweetVolume: null },
-    { name: '#プログラミング', query: '#プログラミング', tweetVolume: null },
-    { name: '#開発日記', query: '#開発日記', tweetVolume: null },
-    { name: '#生産性', query: '#生産性', tweetVolume: null },
-    { name: '#技術', query: '#技術', tweetVolume: null },
-  ]
 }
 
 // Search for places/locations

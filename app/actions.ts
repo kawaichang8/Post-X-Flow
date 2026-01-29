@@ -131,7 +131,8 @@ export async function approveAndPostTweet(
   accessToken: string,
   trend: string,
   purpose: string,
-  twitterAccountId?: string
+  twitterAccountId?: string,
+  options?: { skipSaveToHistory?: boolean }
 ): Promise<{ success: boolean; tweetId?: string; error?: string; retryable?: boolean; retryAfter?: number }> {
   try {
     // Try to post to Twitter
@@ -275,50 +276,52 @@ export async function approveAndPostTweet(
       // Continue even if engagement fetch fails (new tweets may not have metrics yet)
     }
 
-    // Save to history using service role client
-    try {
-      const supabaseAdmin = createServerClient()
-      const { error } = await supabaseAdmin.from("post_history").insert({
-        user_id: userId,
-        twitter_account_id: twitterAccountId || null,
-        text: draft.text,
-        hashtags: draft.hashtags,
-        naturalness_score: draft.naturalnessScore,
-        trend: trend,
-        purpose: purpose,
-        status: "posted",
-        tweet_id: tweet.id,
-        engagement_score: engagementScore,
-        impression_count: impressionCount,
-        reach_count: reachCount,
-        engagement_rate: engagementRate,
-        like_count: likeCount,
-        retweet_count: retweetCount,
-        reply_count: replyCount,
-        quote_count: quoteCount,
-      })
+    // Save to history (skip when posting a scheduled tweet — we update that row instead)
+    if (!options?.skipSaveToHistory) {
+      try {
+        const supabaseAdmin = createServerClient()
+        const { error } = await supabaseAdmin.from("post_history").insert({
+          user_id: userId,
+          twitter_account_id: twitterAccountId || null,
+          text: draft.text,
+          hashtags: draft.hashtags,
+          naturalness_score: draft.naturalnessScore,
+          trend: trend,
+          purpose: purpose,
+          status: "posted",
+          tweet_id: tweet.id,
+          engagement_score: engagementScore,
+          impression_count: impressionCount,
+          reach_count: reachCount,
+          engagement_rate: engagementRate,
+          like_count: likeCount,
+          retweet_count: retweetCount,
+          reply_count: replyCount,
+          quote_count: quoteCount,
+        })
 
-      if (error) {
-        const dbError = classifyError(error)
-        logErrorToSentry(dbError, {
+        if (error) {
+          const dbError = classifyError(error)
+          logErrorToSentry(dbError, {
+            action: 'approveAndPostTweet',
+            step: 'save_to_history',
+            userId,
+            twitterAccountId,
+          })
+          // DBエラーでも投稿は成功しているので、警告のみ
+          console.warn("[Post Tweet] Failed to save to history:", dbError.message)
+        }
+      } catch (dbError) {
+        const appError = classifyError(dbError)
+        logErrorToSentry(appError, {
           action: 'approveAndPostTweet',
           step: 'save_to_history',
           userId,
           twitterAccountId,
         })
         // DBエラーでも投稿は成功しているので、警告のみ
-        console.warn("[Post Tweet] Failed to save to history:", dbError.message)
+        console.warn("[Post Tweet] Failed to save to history:", appError.message)
       }
-    } catch (dbError) {
-      const appError = classifyError(dbError)
-      logErrorToSentry(appError, {
-        action: 'approveAndPostTweet',
-        step: 'save_to_history',
-        userId,
-        twitterAccountId,
-      })
-      // DBエラーでも投稿は成功しているので、警告のみ
-      console.warn("[Post Tweet] Failed to save to history:", appError.message)
     }
 
     return { success: true, tweetId: tweet.id, retryable: false }
@@ -638,34 +641,27 @@ export async function updateAllTweetEngagements(
   }
 }
 
-// Get trending topics for a user
+// Get trending topics for a user (throws when API fails - no fallback to static list)
 export async function getTrends(accessToken: string): Promise<Trend[]> {
-  try {
-    const trends = await getTrendingTopics(accessToken)
-    return trends
-  } catch (error) {
-    console.error("Error fetching trends:", error)
-    return []
-  }
+  const trends = await getTrendingTopics(accessToken)
+  return trends
 }
 
 // Get trending topics for the current user (uses default or specified account token server-side)
+// Throws when latest trends cannot be fetched (no static fallback).
 export async function getTrendsForUser(userId: string, accountId?: string): Promise<Trend[]> {
-  try {
-    const supabaseAdmin = createServerClient()
-    const base = supabaseAdmin
-      .from("user_twitter_tokens")
-      .select("access_token")
-      .eq("user_id", userId)
-    const { data, error } = accountId
-      ? await base.eq("id", accountId).maybeSingle()
-      : await base.eq("is_default", true).maybeSingle()
-    if (error || !data?.access_token) return []
-    return await getTrends(data.access_token)
-  } catch (error) {
-    console.error("Error fetching trends for user:", error)
-    return []
+  const supabaseAdmin = createServerClient()
+  const base = supabaseAdmin
+    .from("user_twitter_tokens")
+    .select("access_token")
+    .eq("user_id", userId)
+  const { data, error } = accountId
+    ? await base.eq("id", accountId).maybeSingle()
+    : await base.eq("is_default", true).maybeSingle()
+  if (error || !data?.access_token) {
+    throw new Error("X連携アカウントのトークンを取得できませんでした。X連携をやり直してください。")
   }
+  return await getTrends(data.access_token)
 }
 
 // Get unique purposes used by a user (for suggestions)
@@ -752,6 +748,81 @@ export async function deleteScheduledTweet(postId: string) {
   } catch (error) {
     console.error("Error deleting scheduled tweet:", error)
     throw error
+  }
+}
+
+// Post a scheduled tweet now (semi-auto: user clicks "投稿する" when notified)
+export async function postScheduledTweet(
+  userId: string,
+  postHistoryId: string,
+  twitterAccountId?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabaseAdmin = createServerClient()
+
+    const { data: post, error: postError } = await supabaseAdmin
+      .from("post_history")
+      .select("id, text, hashtags, naturalness_score, trend, purpose")
+      .eq("id", postHistoryId)
+      .eq("user_id", userId)
+      .eq("status", "scheduled")
+      .maybeSingle()
+
+    if (postError || !post) {
+      return { success: false, error: "予約投稿が見つかりませんでした。" }
+    }
+
+    const accountId = twitterAccountId || undefined
+    const accountQuery = supabaseAdmin
+      .from("user_twitter_tokens")
+      .select("id, access_token, refresh_token")
+      .eq("user_id", userId)
+    const { data: account, error: accountError } = accountId
+      ? await accountQuery.eq("id", accountId).maybeSingle()
+      : await accountQuery.eq("is_default", true).maybeSingle()
+
+    if (accountError || !account?.access_token) {
+      return { success: false, error: "X連携アカウントのトークンを取得できませんでした。X連携をやり直してください。" }
+    }
+
+    const draft: PostDraft = {
+      text: post.text,
+      hashtags: post.hashtags || [],
+      naturalnessScore: post.naturalness_score ?? 0,
+    }
+
+    const result = await approveAndPostTweet(
+      userId,
+      draft,
+      account.access_token,
+      post.trend || "",
+      post.purpose || "",
+      account.id,
+      { skipSaveToHistory: true }
+    )
+
+    if (!result.success) {
+      return { success: false, error: result.error || "投稿に失敗しました。" }
+    }
+
+    // Update the scheduled row to posted (don't insert a new row)
+    await supabaseAdmin
+      .from("post_history")
+      .update({
+        status: "posted",
+        tweet_id: result.tweetId || null,
+        twitter_account_id: account.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", postHistoryId)
+      .eq("user_id", userId)
+      .eq("status", "scheduled")
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error posting scheduled tweet:", error)
+    const message = error instanceof Error ? error.message : "投稿中にエラーが発生しました。"
+    return { success: false, error: message }
   }
 }
 
