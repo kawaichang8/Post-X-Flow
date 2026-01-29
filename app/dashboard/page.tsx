@@ -130,6 +130,16 @@ function NewDashboardContent() {
     refresh: refreshSubscription,
   } = useSubscription(user?.id || null)
 
+  // Handle upgrade: show toast on error so user gets feedback when button does nothing
+  const handleUpgrade = useCallback(async () => {
+    try {
+      await startCheckout()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "アップグレードを開始できませんでした"
+      showToast(msg, "error")
+    }
+  }, [startCheckout, showToast])
+
   // Handle upgrade success/cancel from URL params
   useEffect(() => {
     const upgrade = searchParams.get("upgrade")
@@ -446,7 +456,7 @@ function NewDashboardContent() {
           isPro={isPro}
           isTrialActive={isTrialActive}
           trialDaysRemaining={trialDaysRemaining}
-          onUpgrade={startCheckout}
+          onUpgrade={handleUpgrade}
         />
 
         {/* Main Content */}
@@ -487,7 +497,7 @@ function NewDashboardContent() {
                     trialDaysRemaining={trialDaysRemaining}
                     generationsRemaining={generationsRemaining === Infinity ? 999 : generationsRemaining}
                     generationsLimit={generationsLimit === Infinity ? 999 : generationsLimit}
-                    onUpgrade={startCheckout}
+                    onUpgrade={handleUpgrade}
                     variant={isTrialActive ? "compact" : "default"}
                   />
                 )}

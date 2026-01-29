@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { supabase } from "@/lib/supabase"
 import { 
   getUserSubscription, 
   getSubscriptionLimits, 
@@ -81,27 +82,29 @@ export function useSubscription(userId: string | null): UseSubscriptionReturn {
   }, [userId])
 
   const startCheckout = useCallback(async () => {
-    try {
-      const response = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      })
-
-      const data = await response.json()
-
-      if (data.error) {
-        throw new Error(data.error)
-      }
-
-      if (data.url) {
-        window.location.href = data.url
-      }
-    } catch (err) {
-      console.error("Checkout error:", err)
-      throw err
+    const { data: { session } } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+    if (!accessToken) {
+      throw new Error("ログインしてください。")
     }
+
+    const response = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: accessToken }),
+    })
+
+    const data = await response.json().catch(() => ({ error: "応答の解析に失敗しました" }))
+
+    if (data.error) {
+      throw new Error(typeof data.error === "string" ? data.error : "チェックアウトを開始できませんでした")
+    }
+
+    if (data.url) {
+      window.location.href = data.url
+      return
+    }
+    throw new Error("決済ページのURLを取得できませんでした")
   }, [])
 
   useEffect(() => {

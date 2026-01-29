@@ -1,32 +1,46 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServerClient } from "@/lib/supabase"
+import { createServerClient, getSupabaseClient } from "@/lib/supabase"
 
 // Stripe checkout session creation
-// Note: Requires STRIPE_SECRET_KEY and STRIPE_PRICE_ID environment variables
+// Note: Requires STRIPE_SECRET_KEY and STRIPE_PRICE_ID environment variables.
+// User is authenticated via access_token sent from the client (cookie-less API route).
 
 export async function POST(request: NextRequest) {
   try {
     // Check if Stripe is configured
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY
     const stripePriceId = process.env.STRIPE_PRICE_ID
-    
+
     if (!stripeSecretKey || !stripePriceId) {
       return NextResponse.json(
         { error: "Stripe is not configured. Please set STRIPE_SECRET_KEY and STRIPE_PRICE_ID." },
         { status: 500 }
       )
     }
-    
-    // Get user from Supabase
-    const supabase = createServerClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
+
+    // Get access_token from body (client sends session.access_token)
+    const body = await request.json().catch(() => ({}))
+    const accessToken = (body?.access_token ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")) as string | undefined
+
+    if (!accessToken?.trim()) {
       return NextResponse.json(
-        { error: "Unauthorized" },
+        { error: "Unauthorized. Please sign in again." },
         { status: 401 }
       )
     }
+
+    // Validate JWT and get user with anon client
+    const anon = getSupabaseClient()
+    const { data: { user }, error: authError } = await anon.auth.getUser(accessToken)
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Unauthorized. Session may have expired. Please sign in again." },
+        { status: 401 }
+      )
+    }
+
+    const supabase = createServerClient()
     
     // Get or create Stripe customer
     const { data: subscription } = await supabase

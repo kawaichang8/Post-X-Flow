@@ -35,6 +35,15 @@ export default function PromotionSettingsPage() {
 
   const { isPro, startCheckout } = useSubscription(user?.id ?? null)
 
+  const handleUpgrade = async () => {
+    try {
+      await startCheckout()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "アップグレードを開始できませんでした"
+      showToast(msg, "error")
+    }
+  }
+
   useEffect(() => {
     const check = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -119,7 +128,7 @@ export default function PromotionSettingsPage() {
             trialDaysRemaining={0}
             generationsRemaining={3}
             generationsLimit={3}
-            onUpgrade={startCheckout}
+            onUpgrade={handleUpgrade}
             variant="compact"
             dismissible={false}
           />
