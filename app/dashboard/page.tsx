@@ -130,6 +130,9 @@ function NewDashboardContent() {
     refresh: refreshSubscription,
   } = useSubscription(user?.id || null)
 
+  // When false, run as free-only (no upgrade button/banner)
+  const upgradeEnabled = process.env.NEXT_PUBLIC_UPGRADE_ENABLED !== "false"
+
   // Handle upgrade: show toast on error so user gets feedback when button does nothing
   const handleUpgrade = useCallback(async () => {
     try {
@@ -216,19 +219,21 @@ function NewDashboardContent() {
     loadAccounts()
   }, [user])
 
-  // Handle Twitter callback
+  // Handle Twitter callback (callback uses twitter_connected=true and error=... / details=... / message=...)
   useEffect(() => {
-    const success = searchParams.get("twitter_success")
-    const error = searchParams.get("twitter_error")
-    
-    if (success === "true") {
-      showToast("Twitter連携成功: アカウントが正常に連携されました", "success")
-      // Reload accounts
+    const twitterConnected = searchParams.get("twitter_connected")
+    const error = searchParams.get("error")
+    const details = searchParams.get("details")
+    const message = searchParams.get("message")
+
+    if (twitterConnected === "true") {
+      showToast("X連携が完了しました", "success")
       if (user) {
         getTwitterAccounts(user.id).then(setTwitterAccounts)
       }
     } else if (error) {
-      showToast(`Twitter連携エラー: ${decodeURIComponent(error)}`, "error")
+      const msg = message ? decodeURIComponent(message) : (details ? decodeURIComponent(details) : decodeURIComponent(error))
+      showToast(msg || "X連携に失敗しました", "error")
     }
   }, [searchParams, user, showToast])
 
@@ -356,17 +361,13 @@ function NewDashboardContent() {
     ))
   }
 
-  // Connect Twitter
-  const handleConnectTwitter = async () => {
-    try {
-      const response = await fetch("/api/auth/twitter/url")
-      const data = await response.json()
-      if (data.url) {
-        window.location.href = data.url
-      }
-    } catch (error) {
-      showToast("Twitter連携URLの取得に失敗しました", "error")
+  // Connect Twitter: redirect to OAuth start (server stores session and redirects to X)
+  const handleConnectTwitter = () => {
+    if (!user?.id) {
+      showToast("ログインしてください", "error")
+      return
     }
+    window.location.href = `/api/auth/twitter?userId=${encodeURIComponent(user.id)}`
   }
 
   // Select account
@@ -456,7 +457,7 @@ function NewDashboardContent() {
           isPro={isPro}
           isTrialActive={isTrialActive}
           trialDaysRemaining={trialDaysRemaining}
-          onUpgrade={handleUpgrade}
+          onUpgrade={upgradeEnabled ? handleUpgrade : undefined}
         />
 
         {/* Main Content */}
@@ -491,8 +492,8 @@ function NewDashboardContent() {
                   }}
                 />
 
-                {/* Upgrade Banner for Free/Trial Users */}
-                {!isPro && (
+                {/* Upgrade Banner for Free/Trial Users (hidden when NEXT_PUBLIC_UPGRADE_ENABLED=false) */}
+                {!isPro && upgradeEnabled && (
                   <UpgradeBanner
                     trialDaysRemaining={trialDaysRemaining}
                     generationsRemaining={generationsRemaining === Infinity ? 999 : generationsRemaining}

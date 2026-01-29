@@ -13,8 +13,8 @@ export async function POST(request: NextRequest) {
 
     if (!stripeSecretKey || !stripePriceId) {
       return NextResponse.json(
-        { error: "Stripe is not configured. Please set STRIPE_SECRET_KEY and STRIPE_PRICE_ID." },
-        { status: 500 }
+        { error: "Proプランは準備中です。現在は無料プランでご利用ください。" },
+        { status: 503 }
       )
     }
 

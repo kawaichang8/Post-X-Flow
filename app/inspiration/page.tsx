@@ -66,6 +66,7 @@ export default function InspirationPage() {
   const [showConfirm, setShowConfirm] = useState(false)
 
   const { isPro, startCheckout } = useSubscription(user?.id ?? null)
+  const upgradeEnabled = process.env.NEXT_PUBLIC_UPGRADE_ENABLED !== "false"
 
   const handleUpgrade = async () => {
     try {
@@ -214,7 +215,7 @@ export default function InspirationPage() {
           </div>
         </div>
 
-        {!isPro && (
+        {!isPro && upgradeEnabled && (
           <UpgradeBanner
             trialDaysRemaining={0}
             generationsRemaining={0}

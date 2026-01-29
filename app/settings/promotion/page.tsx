@@ -34,6 +34,7 @@ export default function PromotionSettingsPage() {
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE)
 
   const { isPro, startCheckout } = useSubscription(user?.id ?? null)
+  const upgradeEnabled = process.env.NEXT_PUBLIC_UPGRADE_ENABLED !== "false"
 
   const handleUpgrade = async () => {
     try {
@@ -123,7 +124,7 @@ export default function PromotionSettingsPage() {
           </div>
         </div>
 
-        {!isPro && (
+        {!isPro && upgradeEnabled && (
           <UpgradeBanner
             trialDaysRemaining={0}
             generationsRemaining={3}
