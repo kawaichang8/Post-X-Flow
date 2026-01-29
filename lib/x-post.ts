@@ -388,6 +388,41 @@ export interface ScheduledTweet {
   userId: string
 }
 
+// OAuth 2.0 Application-Only Bearer Token (for endpoints that require it, e.g. v2 trends)
+let cachedAppOnlyBearerToken: string | null = null
+let cachedAppOnlyBearerTokenExpiry = 0
+const BEARER_TOKEN_CACHE_MS = 50 * 60 * 1000 // 50 min (tokens often valid 2h)
+
+export async function getAppOnlyBearerToken(): Promise<string> {
+  if (cachedAppOnlyBearerToken && Date.now() < cachedAppOnlyBearerTokenExpiry) {
+    return cachedAppOnlyBearerToken
+  }
+  const clientId = getTwitterClientId()
+  const clientSecret = getTwitterClientSecret()
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`, 'utf8').toString('base64')
+  const response = await fetch('https://api.x.com/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basicAuth}`,
+    },
+    body: 'grant_type=client_credentials',
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    console.error('[AppOnlyBearer] Error:', response.status, text)
+    throw new Error(`アプリ認証トークンの取得に失敗しました: ${response.status}`)
+  }
+  const data = await response.json()
+  const token = data.access_token
+  if (!token) {
+    throw new Error('アプリ認証トークンの取得に失敗しました（トークンなし）')
+  }
+  cachedAppOnlyBearerToken = token
+  cachedAppOnlyBearerTokenExpiry = Date.now() + BEARER_TOKEN_CACHE_MS
+  return token
+}
+
 // Get trending topics (Japan - WOEID: 23424856)
 export interface Trend {
   name: string

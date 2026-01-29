@@ -3,7 +3,7 @@
 import { generatePosts, PostDraft, improveTweetText, ImprovedText } from "@/lib/ai-generator"
 import { createServerClient } from "@/lib/supabase"
 import { getPromotionSettingsForGeneration } from "@/app/actions-promotion"
-import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place } from "@/lib/x-post"
+import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place, getAppOnlyBearerToken } from "@/lib/x-post"
 import { generateEyeCatchImage, generateImageVariations, downloadImageAsBuffer, GeneratedImage } from "@/lib/image-generator"
 import { classifyError, logErrorToSentry, AppError, ErrorType } from "@/lib/error-handler"
 
@@ -647,25 +647,16 @@ export async function getTrends(accessToken: string): Promise<Trend[]> {
   return trends
 }
 
-// Get trending topics for the current user (uses default or specified account token server-side).
+// Get trending topics for the current user.
+// v2 trends API requires OAuth 2.0 Application-Only (app Bearer Token), not user token.
 // Returns { trends, error? } so the client gets a 200 with error message instead of 500.
 export async function getTrendsForUser(
   userId: string,
-  accountId?: string
+  _accountId?: string
 ): Promise<{ trends: Trend[]; error?: string }> {
   try {
-    const supabaseAdmin = createServerClient()
-    const base = supabaseAdmin
-      .from("user_twitter_tokens")
-      .select("access_token")
-      .eq("user_id", userId)
-    const { data, error } = accountId
-      ? await base.eq("id", accountId).maybeSingle()
-      : await base.eq("is_default", true).maybeSingle()
-    if (error || !data?.access_token) {
-      return { trends: [], error: "X連携アカウントのトークンを取得できませんでした。X連携をやり直してください。" }
-    }
-    const trends = await getTrends(data.access_token)
+    const bearerToken = await getAppOnlyBearerToken()
+    const trends = await getTrends(bearerToken)
     return { trends }
   } catch (e) {
     const message = e instanceof Error ? e.message : "トレンドの取得に失敗しました。"
