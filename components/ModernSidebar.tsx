@@ -112,7 +112,7 @@ export function ModernSidebar({
     const isActive = item.path ? pathname === item.path : activeView === item.id
     const onClick = () => {
       if (item.path) {
-        window.open(item.path, "_blank", "noopener,noreferrer")
+        router.push(item.path)
       } else {
         handleNavClick(item.id)
       }
