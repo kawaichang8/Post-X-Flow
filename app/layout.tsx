@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/toast";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
 
-const inter = Inter({ subsets: ["latin"] });
+// System font stack for offline/CI-safe build (no Google Fonts fetch at build time)
+const fontClass = "font-sans antialiased";
 
 export const metadata: Metadata = {
   title: "postXflow - X（Twitter）成長自動化ツール",
@@ -67,7 +67,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={inter.className}>
+      <body className={fontClass}>
         <ToastProvider>
           {children}
           <PWAInstallPrompt />
