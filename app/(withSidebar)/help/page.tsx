@@ -1,40 +1,23 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft, Book, HelpCircle, MessageSquare, Shield, Zap, BarChart3, Clock } from "lucide-react"
+import { Book, HelpCircle, MessageSquare, Shield, Zap, BarChart3, Clock } from "lucide-react"
 
 export default function HelpPage() {
-  const router = useRouter()
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push("/dashboard")}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              ダッシュボードに戻る
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold flex items-center gap-2">
-                <Book className="h-8 w-8" />
-                ヘルプ・使い方
-              </h1>
-              <p className="text-muted-foreground">
-                postXflowの使い方をご案内します
-              </p>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          <Book className="h-8 w-8" />
+          ヘルプ・使い方
+        </h1>
+        <p className="text-muted-foreground">
+          postXflowの使い方をご案内します
+        </p>
+      </div>
 
-        {/* Quick Start */}
+      {/* Quick Start */}
         <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-950 transition-colors duration-200 animate-fade-in">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -218,7 +201,6 @@ export default function HelpPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
     </div>
   )
 }
