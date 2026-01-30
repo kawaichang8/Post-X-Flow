@@ -64,9 +64,24 @@ export function ModernSidebar({
   const router = useRouter()
   const pathname = usePathname()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false
+    return localStorage.getItem("sidebar_collapsed") === "true"
+  })
+
   const selectedAccount = twitterAccounts.find(acc => acc.id === selectedAccountId) || twitterAccounts.find(acc => acc.is_default)
+
+  // Sync CSS variable --sidebar-width so main content margin matches (collapsed 80px, expanded 280px on lg+)
+  useEffect(() => {
+    const updateWidth = () => {
+      const isLg = typeof window !== "undefined" && window.innerWidth >= 1024
+      const w = isLg ? (isCollapsed ? "80px" : "280px") : "5rem"
+      document.documentElement.style.setProperty("--sidebar-width", w)
+    }
+    updateWidth()
+    window.addEventListener("resize", updateWidth)
+    return () => window.removeEventListener("resize", updateWidth)
+  }, [isCollapsed])
 
   // Close mobile menu when clicking outside
   useEffect(() => {
@@ -207,7 +222,10 @@ export function ModernSidebar({
                 </div>
               </div>
               <button
-                onClick={() => setIsCollapsed(true)}
+                onClick={() => {
+                  setIsCollapsed(true)
+                  typeof window !== "undefined" && localStorage.setItem("sidebar_collapsed", "true")
+                }}
                 className="hidden lg:flex p-2 rounded-xl hover:bg-accent/80 transition-all duration-200 hover:scale-105"
               >
                 <ChevronLeft className="h-4 w-4 text-muted-foreground" />
@@ -219,7 +237,10 @@ export function ModernSidebar({
                 <Sparkles className="h-6 w-6 text-white" />
               </div>
               <button
-                onClick={() => setIsCollapsed(false)}
+                onClick={() => {
+                  setIsCollapsed(false)
+                  typeof window !== "undefined" && localStorage.setItem("sidebar_collapsed", "false")
+                }}
                 className="hidden lg:flex p-2 rounded-xl hover:bg-accent/80 transition-all duration-200 hover:scale-105"
               >
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />

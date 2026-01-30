@@ -121,7 +121,7 @@ export default function WithSidebarLayout({
           trialDaysRemaining={trialDaysRemaining ?? 0}
           onUpgrade={upgradeEnabled ? handleUpgrade : undefined}
         />
-        <main className="flex-1 min-h-screen p-4 md:p-6 lg:p-8 ml-20 md:ml-[280px] transition-all duration-300">
+        <main className="flex-1 min-h-screen p-4 md:p-6 lg:p-8 transition-all duration-300" style={{ marginLeft: 'var(--sidebar-width, 5rem)' }}>
           <div className="max-w-6xl mx-auto">{children}</div>
         </main>
       </div>

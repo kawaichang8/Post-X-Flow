@@ -66,6 +66,13 @@
   /* Custom gradient backgrounds */
   --gradient-start: 140 60% 98%;
   --gradient-end: 0 0% 100%;
+  /* Sidebar width: mobile = hamburger space, desktop = sync with ModernSidebar (JS may override) */
+  --sidebar-width: 5rem; /* 80px = ml-20 for mobile */
+}
+@media (min-width: 1024px) {
+  :root {
+    --sidebar-width: 280px;
+  }
 }
 
 /* ============================================

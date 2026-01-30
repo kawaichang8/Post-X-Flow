@@ -590,7 +590,7 @@ function NewDashboardContent() {
         />
 
         {/* Main Content */}
-        <main className="flex-1 min-h-screen p-4 md:p-6 lg:p-8 ml-20 md:ml-[280px] transition-all duration-300">
+        <main className="flex-1 min-h-screen p-4 md:p-6 lg:p-8 transition-all duration-300" style={{ marginLeft: 'var(--sidebar-width, 5rem)' } as React.CSSProperties}>
           <div className="max-w-6xl mx-auto space-y-6">
 
             {/* Due scheduled posts banner (semi-auto: 通知 → ユーザーが押して投稿) */}
