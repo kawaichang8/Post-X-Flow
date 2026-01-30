@@ -88,70 +88,36 @@ export function ModernSidebar({
     setIsMobileOpen(false)
   }
 
-  const mainNavItems = [
-    {
-      id: "create",
-      label: "ホーム",
-      icon: Home,
-      description: "投稿を作成",
-    },
-    {
-      id: "history",
-      label: "投稿",
-      icon: FileText,
-      description: "投稿履歴を表示",
-    },
-    {
-      id: "scheduled",
-      label: "カレンダー",
-      icon: Calendar,
-      description: "スケジュール管理",
-    },
-    {
-      id: "analytics",
-      label: "分析",
-      icon: BarChart3,
-      description: "パフォーマンス分析",
-    },
-    {
-      id: "community",
-      label: "コミュニティ",
-      icon: Users,
-      description: "テンプレート共有",
-    },
+  // 上段に一本化: ダッシュボード用は onNavigate、外部ページ用は path で router.push
+  type NavItemType = {
+    id: string
+    label: string
+    icon: typeof Home
+    path?: string
+  }
+  const allNavItems: NavItemType[] = [
+    { id: "create", label: "ホーム", icon: Home },
+    { id: "history", label: "投稿", icon: FileText },
+    { id: "scheduled", label: "カレンダー", icon: Calendar },
+    { id: "analytics", label: "分析", icon: BarChart3, path: "/analytics" },
+    { id: "community", label: "コミュニティ", icon: Users },
+    { id: "inspiration", label: "インスピレーション", icon: Quote, path: "/inspiration" },
+    { id: "promotion", label: "宣伝設定", icon: Megaphone, path: "/settings/promotion" },
+    { id: "settings", label: "設定", icon: Settings, path: "/settings" },
+    { id: "help", label: "ヘルプ", icon: HelpCircle, path: "/help" },
   ]
 
-  const bottomNavItems = [
-    {
-      id: "inspiration",
-      label: "インスピレーション",
-      icon: Quote,
-      onClick: () => router.push("/inspiration"),
-    },
-    {
-      id: "promotion",
-      label: "宣伝設定",
-      icon: Megaphone,
-      onClick: () => router.push("/settings/promotion"),
-    },
-    {
-      id: "settings",
-      label: "設定",
-      icon: Settings,
-      onClick: () => router.push("/settings"),
-    },
-    {
-      id: "help",
-      label: "ヘルプ",
-      icon: HelpCircle,
-      onClick: () => router.push("/help"),
-    },
-  ]
-
-  const NavItem = ({ item, isBottom = false }: { item: typeof mainNavItems[0] | typeof bottomNavItems[0]; isBottom?: boolean }) => {
+  const NavItem = ({ item }: { item: NavItemType }) => {
     const Icon = item.icon
-    const isActive = !isBottom && (item.id === "analytics" ? pathname === "/analytics" : activeView === item.id)
-    const onClick = isBottom ? (item as typeof bottomNavItems[0]).onClick : () => handleNavClick(item.id)
+    const isActive = item.path ? pathname === item.path : activeView === item.id
+    const onClick = () => {
+      if (item.path) {
+        window.open(item.path, "_blank", "noopener,noreferrer")
+      } else {
+        handleNavClick(item.id)
+      }
+      setIsMobileOpen(false)
+    }
 
     const button = (
       <button
@@ -262,9 +228,9 @@ export function ModernSidebar({
           )}
         </div>
 
-        {/* Main Navigation */}
+        {/* Navigation（分析・インスピレーション・宣伝設定・設定・ヘルプも上段に統一） */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {mainNavItems.map((item) => (
+          {allNavItems.map((item) => (
             <NavItem key={item.id} item={item} />
           ))}
         </nav>
@@ -433,13 +399,8 @@ export function ModernSidebar({
           </div>
         )}
 
-        {/* Bottom Actions */}
-        <div className="p-3 border-t border-border space-y-1 shrink-0">
-          {bottomNavItems.map((item) => (
-            <NavItem key={item.id} item={item} isBottom />
-          ))}
-          
-          {/* User Avatar & Logout */}
+        {/* User Avatar & Logout */}
+        <div className="p-3 border-t border-border shrink-0">
           {user && (
             <div className={cn(
               "flex items-center gap-3 mt-3 pt-3 border-t border-border",
