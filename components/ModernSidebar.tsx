@@ -21,7 +21,8 @@ import {
   Crown,
   Zap,
   Megaphone,
-  Quote
+  Quote,
+  History
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
@@ -113,6 +114,7 @@ export function ModernSidebar({
   const allNavItems: NavItemType[] = [
     { id: "create", label: "ホーム", icon: Home },
     { id: "history", label: "投稿", icon: FileText },
+    { id: "generationHistory", label: "生成履歴", icon: History },
     { id: "scheduled", label: "カレンダー", icon: Calendar },
     { id: "analytics", label: "分析", icon: BarChart3, path: "/analytics" },
     { id: "community", label: "コミュニティ", icon: Users },

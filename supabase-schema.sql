@@ -302,6 +302,30 @@ CREATE INDEX IF NOT EXISTS idx_post_history_created_at ON post_history(created_a
 CREATE INDEX IF NOT EXISTS idx_post_history_status ON post_history(status);
 CREATE INDEX IF NOT EXISTS idx_post_history_engagement ON post_history(engagement_score DESC);
 CREATE INDEX IF NOT EXISTS idx_post_history_ab_test_id ON post_history(ab_test_id) WHERE ab_test_id IS NOT NULL;
+
+-- Table: generation_history (生成履歴 - 月別整理・DB圧迫時は古い削除で相談)
+CREATE TABLE IF NOT EXISTS generation_history (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  trend TEXT,
+  purpose TEXT,
+  draft_count INTEGER NOT NULL DEFAULT 0,
+  drafts JSONB NOT NULL DEFAULT '[]',
+  ai_provider TEXT CHECK (ai_provider IN ('grok', 'claude')),
+  context_used BOOLEAN DEFAULT false,
+  fact_used BOOLEAN DEFAULT false
+);
+COMMENT ON TABLE generation_history IS '生成履歴。月別表示・整理用。DB圧迫時は古い削除または保持期間の設定を検討';
+ALTER TABLE generation_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own generation_history" ON generation_history;
+DROP POLICY IF EXISTS "Users can insert own generation_history" ON generation_history;
+DROP POLICY IF EXISTS "Users can delete own generation_history" ON generation_history;
+CREATE POLICY "Users can view own generation_history" ON generation_history FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own generation_history" ON generation_history FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete own generation_history" ON generation_history FOR DELETE USING (auth.uid() = user_id);
+CREATE INDEX IF NOT EXISTS idx_generation_history_user_created ON generation_history(user_id, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_user_twitter_tokens_user_id ON user_twitter_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_twitter_tokens_user_id_is_default ON user_twitter_tokens(user_id, is_default);
 

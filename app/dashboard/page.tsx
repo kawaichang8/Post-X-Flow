@@ -20,6 +20,13 @@ import {
   setDefaultTwitterAccount, 
   TwitterAccount 
 } from "@/app/actions"
+import {
+  saveGenerationHistory,
+  getGenerationHistory,
+  deleteGenerationHistoryOlderThan,
+  deleteGenerationHistoryById,
+  type GenerationHistoryItem,
+} from "@/app/actions-generation-history"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,7 +55,7 @@ import { ProCard } from "@/components/ProCard"
 import { UsageLimitWarning } from "@/components/ProFeatureLock"
 import { useSubscription } from "@/hooks/useSubscription"
 import { incrementGenerationCount } from "@/app/actions-subscription"
-import { Loader2, RefreshCw, Sparkles, History, Heart, Eye, Bell, Send } from "lucide-react"
+import { Loader2, RefreshCw, Sparkles, History, Heart, Eye, Bell, Send, Trash2, ChevronDown, ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 
@@ -115,6 +122,8 @@ function NewDashboardContent() {
   const [scheduledTweets, setScheduledTweets] = useState<PostHistoryItem[]>([])
   const [historyList, setHistoryList] = useState<PostHistoryItem[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [generationHistoryList, setGenerationHistoryList] = useState<GenerationHistoryItem[]>([])
+  const [loadingGenerationHistory, setLoadingGenerationHistory] = useState(false)
 
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -200,6 +209,24 @@ function NewDashboardContent() {
   useEffect(() => {
     if (activeView === "history" && user) loadHistory()
   }, [activeView, user, loadHistory])
+
+  const loadGenerationHistory = useCallback(async () => {
+    if (!user) return
+    setLoadingGenerationHistory(true)
+    try {
+      const data = await getGenerationHistory(user.id, { limit: 300 })
+      setGenerationHistoryList(data)
+    } catch (e) {
+      console.error("Failed to load generation history:", e)
+      showToast("生成履歴の取得に失敗しました", "error")
+    } finally {
+      setLoadingGenerationHistory(false)
+    }
+  }, [user, showToast])
+
+  useEffect(() => {
+    if (activeView === "generationHistory" && user) loadGenerationHistory()
+  }, [activeView, user, loadGenerationHistory])
 
   // Check user session
   useEffect(() => {
@@ -299,6 +326,7 @@ function NewDashboardContent() {
         }))
         setDrafts(generatedPosts)
         showToast(`${generatedPosts.length}案をABテスト用に作成しました（分析で比較できます）`, "success")
+        await saveGenerationHistory(user.id, trend, purpose, draftsResult.map((d) => ({ text: d.text, naturalnessScore: d.naturalnessScore, factScore: d.factScore })), { aiProvider: genOptions.aiProvider, contextUsed: !!genOptions.contextMode, factUsed: !!genOptions.factCheck })
       } else {
         const draftsResult = await generatePostDrafts(trend, purpose, genOptions)
         const generatedPosts: GeneratedPost[] = draftsResult.map((draft, index: number) => ({
@@ -311,6 +339,7 @@ function NewDashboardContent() {
         }))
         setDrafts(generatedPosts)
         showToast(`${generatedPosts.length}件の投稿案を作成しました`, "success")
+        await saveGenerationHistory(user.id, trend, purpose, draftsResult.map((d) => ({ text: d.text, naturalnessScore: d.naturalnessScore, factScore: d.factScore })), { aiProvider: genOptions.aiProvider, contextUsed: !!genOptions.contextMode, factUsed: !!genOptions.factCheck })
       }
     } catch (error) {
       showToast("投稿の生成に失敗しました", "error")
@@ -947,6 +976,141 @@ function NewDashboardContent() {
                       ))}
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Generation History View - 月別 */}
+            {activeView === "generationHistory" && (
+              <Card className="rounded-2xl border-0 shadow-lg overflow-hidden">
+                <CardHeader>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <CardTitle>生成履歴</CardTitle>
+                      <CardDescription>
+                        いつ・何を生成したか。月別に整理。DB圧迫時は古い履歴を削除できます。
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={loadGenerationHistory}
+                        disabled={loadingGenerationHistory}
+                        className="rounded-xl"
+                      >
+                        <RefreshCw className={cn("h-4 w-4 mr-1.5", loadingGenerationHistory && "animate-spin")} />
+                        更新
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {loadingGenerationHistory && (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
+                  {!loadingGenerationHistory && generationHistoryList.length === 0 && (
+                    <div className="text-center py-12">
+                      <History className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        生成履歴がありません。ツイートを生成するとここに残ります。
+                      </p>
+                    </div>
+                  )}
+                  {!loadingGenerationHistory && generationHistoryList.length > 0 && (() => {
+                    const byMonth = new Map<string, GenerationHistoryItem[]>()
+                    generationHistoryList.forEach((item) => {
+                      const d = new Date(item.created_at)
+                      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+                      if (!byMonth.has(key)) byMonth.set(key, [])
+                      byMonth.get(key)!.push(item)
+                    })
+                    const months = Array.from(byMonth.keys()).sort((a, b) => b.localeCompare(a))
+                    return (
+                      <div className="space-y-6">
+                        {months.map((monthKey) => {
+                          const [y, m] = monthKey.split("-")
+                          const label = `${y}年${m}月`
+                          const items = byMonth.get(monthKey)!
+                          return (
+                            <div key={monthKey} className="space-y-2">
+                              <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                                <ChevronRight className="h-4 w-4" />
+                                {label}（{items.length}件）
+                              </h3>
+                              <ul className="space-y-2 pl-4 border-l-2 border-border">
+                                {items.map((item) => (
+                                  <li key={item.id} className="p-3 rounded-xl border bg-card/50 hover:bg-muted/30 transition-colors">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs text-muted-foreground mb-1">
+                                          {new Date(item.created_at).toLocaleString("ja-JP", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                          {item.trend && ` · #${item.trend.replace(/^#/, "")}`}
+                                          {item.purpose && ` · ${item.purpose}`}
+                                          {item.ai_provider && ` · ${item.ai_provider}`}
+                                        </p>
+                                        <p className="text-sm line-clamp-2 text-foreground">{item.drafts[0]?.text ?? "—"}</p>
+                                        {item.draft_count > 1 && (
+                                          <p className="text-xs text-muted-foreground mt-1">{item.draft_count}案</p>
+                                        )}
+                                      </div>
+                                      {user && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                                          onClick={async () => {
+                                            const { success, error } = await deleteGenerationHistoryById(user.id, item.id)
+                                            if (success) {
+                                              showToast("1件削除しました", "success")
+                                              loadGenerationHistory()
+                                            } else {
+                                              showToast(error ?? "削除に失敗しました", "error")
+                                            }
+                                          }}
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )
+                        })}
+                        {user && (
+                          <div className="pt-4 border-t">
+                            <p className="text-xs text-muted-foreground mb-2">DB容量が気になる場合：古い履歴をまとめて削除</p>
+                            <div className="flex flex-wrap gap-2">
+                              {[3, 6, 12].map((months) => (
+                                <Button
+                                  key={months}
+                                  variant="outline"
+                                  size="sm"
+                                  className="rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={async () => {
+                                    if (!confirm(`${months}ヶ月より古い生成履歴を削除しますか？`)) return
+                                    const { deleted, error } = await deleteGenerationHistoryOlderThan(user.id, months)
+                                    if (error) {
+                                      showToast(error, "error")
+                                      return
+                                    }
+                                    showToast(`${deleted}件削除しました`, "success")
+                                    loadGenerationHistory()
+                                  }}
+                                >
+                                  {months}ヶ月より古い履歴を削除
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             )}
