@@ -26,6 +26,11 @@ export async function getPromotionSettings(userId: string): Promise<PromotionSet
 
     if (error) {
       if (error.code === "PGRST116") return null
+      // PGRST205 = table not in schema cache (e.g. promotion_settings not migrated yet)
+      if (error.code === "PGRST205") {
+        console.warn("promotion_settings table not found; run supabase migration if you need promotion features.")
+        return null
+      }
       console.error("Error fetching promotion settings:", error)
       return null
     }
@@ -80,7 +85,7 @@ export async function getPromotionSettingsForGeneration(userId: string): Promise
   link_url: string
   template: string
 } | null> {
-  const row = await getPromotionSettings(userId)
+  const row = await getPromotionSettings(userId).catch(() => null)
   if (!row || !row.enabled || !row.link_url?.trim()) return null
   return {
     enabled: true,

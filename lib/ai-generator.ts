@@ -150,13 +150,10 @@ async function generateWithClaude(trend: string, purpose: string, scoreConfig?: 
     .replace('{purpose}', purpose)
     .replace('{contextSection}', contextSection)
 
-  // Use Claude 3.5 Sonnet - optimal balance of cost and quality for tweet generation
-  // Cost: $3/1M input tokens, $15/1M output tokens
-  // Quality: Excellent for structured JSON output and natural text generation
-  // Fallback to Claude Sonnet 4.5 if 3.5 is unavailable
+  // Prefer Claude Sonnet 4.5 (current); fallback to 3.5 if 4.5 is unavailable
   const modelNames = [
-    'claude-3-5-sonnet-20241022', // Optimal: Best cost/quality balance for tweet generation
-    'claude-sonnet-4-5',          // Fallback: Latest model if 3.5 is unavailable
+    'claude-sonnet-4-5',          // Current model (avoid 404 from deprecated IDs)
+    'claude-3-5-sonnet-20241022', // Fallback
   ]
 
   let lastError: AppError | null = null
@@ -574,8 +571,8 @@ ${purpose ? `【投稿目的】\n${purpose}\n` : ''}
 
   const anthropic = getAnthropicClient()
   const modelNames = [
-    'claude-3-5-sonnet-20241022',
     'claude-sonnet-4-5',
+    'claude-3-5-sonnet-20241022',
   ]
 
   let lastError: AppError | null = null
@@ -735,8 +732,21 @@ const FACT_CHECK_PROMPT = `以下のX投稿案の事実関係を確認してく�
   "suggestions": ["修正提案1", "修正提案2", ...]（問題なければ空配列）
 }`
 
+/** Build user-facing suggestion when fact-check fails (for logging + UI) */
+function factCheckFailureSuggestion(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  if (/not set|API key|API_KEY|configure.*environment/i.test(msg))
+    return '事実確認に必要なAPIキーが設定されていません。設定でClaudeまたはGrokのキーを設定してください。'
+  if (/rate|limit|429|quota/i.test(msg))
+    return 'APIの利用制限に達した可能性があります。しばらく時間をおいてから再度お試しください。'
+  if (/Grok fact-check API error|Anthropic|claude/i.test(msg))
+    return 'AIの事実確認APIでエラーが発生しました。内容を手動で確認してください。'
+  return '事実確認の取得に失敗しました。内容を手動で確認してください。'
+}
+
 /**
- * AI fact-check: verify factual claims in draft, return score (0-100) and correction suggestions
+ * AI fact-check: verify factual claims in draft, return score (0-100) and correction suggestions.
+ * Failure paths: API key missing → fallback (Claude→Grok) or return 50 + message; API error/network → 50 + message.
  */
 export async function factCheckDraft(
   text: string,
@@ -748,33 +758,47 @@ export async function factCheckDraft(
       try {
         getAnthropicApiKey()
         return await factCheckWithClaude(prompt)
-      } catch {
-        getGrokApiKey()
-        return await factCheckWithGrok(prompt)
+      } catch (e) {
+        console.warn('[factCheck] Claude failed, falling back to Grok:', e instanceof Error ? e.message : e)
+        try {
+          getGrokApiKey()
+          return await factCheckWithGrok(prompt)
+        } catch (grokErr) {
+          // Grok key not set or API error: return 50 + suggestion instead of throwing
+          const suggestion = factCheckFailureSuggestion(grokErr)
+          return { score: 50, suggestions: [suggestion] }
+        }
       }
     }
     getGrokApiKey()
     return await factCheckWithGrok(prompt)
   } catch (e) {
-    console.error('factCheckDraft error:', e)
-    return { score: 50, suggestions: ['事実確認の取得に失敗しました。内容を手動で確認してください。'] }
+    const errMsg = e instanceof Error ? e.message : String(e)
+    const errStack = e instanceof Error ? e.stack : undefined
+    console.error('[factCheck] factCheckDraft failed. provider=', aiProvider, 'error=', errMsg, errStack ?? '')
+    const suggestion = factCheckFailureSuggestion(e)
+    return { score: 50, suggestions: [suggestion] }
   }
 }
 
 async function factCheckWithClaude(prompt: string): Promise<FactCheckResult> {
   const client = getAnthropicClient()
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-5',
     max_tokens: 500,
     messages: [{ role: 'user', content: prompt }],
   })
   const content = (msg.content[0] as { text?: string })?.text?.trim() || ''
   const jsonMatch = content.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return { score: 70, suggestions: [] }
-  const parsed = JSON.parse(jsonMatch[0]) as { score?: number; suggestions?: string[] }
-  return {
-    score: Math.min(100, Math.max(0, Number(parsed.score) ?? 70)),
-    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as { score?: number; suggestions?: string[] }
+    return {
+      score: Math.min(100, Math.max(0, Number(parsed.score) ?? 70)),
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+    }
+  } catch {
+    return { score: 70, suggestions: [] }
   }
 }
 
@@ -790,14 +814,29 @@ async function factCheckWithGrok(prompt: string): Promise<FactCheckResult> {
       max_tokens: 500,
     }),
   })
-  if (!res.ok) throw new Error('Grok fact-check API error')
-  const data = await res.json()
-  const content = data.choices?.[0]?.message?.content?.trim() || ''
+  const rawText = await res.text()
+  const data = (() => {
+    try {
+      return rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {}
+    } catch {
+      return {}
+    }
+  })()
+  if (!res.ok) {
+    const errMsg = (data as { error?: { message?: string } })?.error?.message || res.statusText
+    console.error('[factCheck] Grok API error:', res.status, errMsg, 'body:', rawText.slice(0, 500))
+    throw new Error(`Grok fact-check API error: ${res.status} ${errMsg}`)
+  }
+  const content = (data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content?.trim() || ''
   const jsonMatch = content.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return { score: 70, suggestions: [] }
-  const parsed = JSON.parse(jsonMatch[0]) as { score?: number; suggestions?: string[] }
-  return {
-    score: Math.min(100, Math.max(0, Number(parsed.score) ?? 70)),
-    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as { score?: number; suggestions?: string[] }
+    return {
+      score: Math.min(100, Math.max(0, Number(parsed.score) ?? 70)),
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+    }
+  } catch {
+    return { score: 70, suggestions: [] }
   }
 }

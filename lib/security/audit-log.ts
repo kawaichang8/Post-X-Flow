@@ -63,11 +63,12 @@ export async function logAuditEvent(
     // 本番環境ではSupabaseに保存、開発環境ではコンソールに出力
     if (process.env.NODE_ENV === 'production') {
       const supabase = createServerClient()
-      await supabase.from('audit_logs').insert(entry).catch((error: unknown) => {
+      const { error } = await supabase.from('audit_logs').insert(entry)
+      if (error) {
         // ログ保存失敗は致命的ではないので、コンソールに出力
         console.error('[Audit Log] Failed to save audit log:', error)
         console.log('[Audit Log] Entry:', JSON.stringify(entry, null, 2))
-      })
+      }
     } else {
       // 開発環境ではコンソールに出力
       console.log('[Audit Log]', JSON.stringify(entry, null, 2))
