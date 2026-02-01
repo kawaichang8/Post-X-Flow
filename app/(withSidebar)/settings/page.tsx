@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { User, Bell, Shield, Trash2, Megaphone } from "lucide-react"
+import { User, Bell, Shield, Trash2, Megaphone, FileText, Loader2, Check } from "lucide-react"
 import { useToast } from "@/components/ui/toast"
+import { getUserSettings, saveUserSettings } from "@/app/actions-user-settings"
 
 interface User {
   id: string
@@ -19,10 +22,31 @@ export default function SettingsPage() {
   const { showToast } = useToast()
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  
+  // Obsidian settings
+  const [obsidianVaultName, setObsidianVaultName] = useState("")
+  const [isSavingObsidian, setIsSavingObsidian] = useState(false)
+  const [obsidianSaved, setObsidianSaved] = useState(false)
 
   useEffect(() => {
     checkUser()
   }, [])
+  
+  // Load Obsidian settings when user is loaded
+  useEffect(() => {
+    const loadObsidianSettings = async () => {
+      if (!user) return
+      try {
+        const settings = await getUserSettings(user.id)
+        if (settings?.obsidian_vault_name) {
+          setObsidianVaultName(settings.obsidian_vault_name)
+        }
+      } catch (e) {
+        console.warn("Failed to load Obsidian settings:", e)
+      }
+    }
+    loadObsidianSettings()
+  }, [user])
 
   const checkUser = async () => {
     const {
@@ -169,6 +193,79 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </Link>
+
+        {/* Obsidian Integration */}
+        <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-950 transition-colors duration-200 animate-fade-in">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-purple-500" />
+              Obsidian連携
+            </CardTitle>
+            <CardDescription>
+              Obsidianとの連携設定（エクスポート機能）
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="obsidianVault" className="text-sm font-medium">
+                Vault名
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Obsidianで使用しているVault名を入力すると、エクスポート時に直接Obsidianで開けます
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  id="obsidianVault"
+                  value={obsidianVaultName}
+                  onChange={(e) => {
+                    setObsidianVaultName(e.target.value)
+                    setObsidianSaved(false)
+                  }}
+                  placeholder="例: MyNotes"
+                  className="rounded-xl flex-1"
+                />
+                <Button
+                  onClick={async () => {
+                    if (!user) return
+                    setIsSavingObsidian(true)
+                    try {
+                      const result = await saveUserSettings(user.id, {
+                        obsidian_vault_name: obsidianVaultName.trim() || null,
+                      })
+                      if (result.success) {
+                        showToast("Obsidian設定を保存しました", "success")
+                        setObsidianSaved(true)
+                      } else {
+                        showToast(result.error || "保存に失敗しました", "error")
+                      }
+                    } catch (e) {
+                      console.error("Failed to save Obsidian settings:", e)
+                      showToast("保存に失敗しました", "error")
+                    } finally {
+                      setIsSavingObsidian(false)
+                    }
+                  }}
+                  disabled={isSavingObsidian}
+                  variant="outline"
+                  className="rounded-xl"
+                >
+                  {isSavingObsidian ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : obsidianSaved ? (
+                    <Check className="h-4 w-4 text-green-500" />
+                  ) : (
+                    "保存"
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="p-3 bg-purple-50 dark:bg-purple-950/30 rounded-xl">
+              <p className="text-xs text-purple-700 dark:text-purple-300">
+                💡 ダッシュボードの「Obsidianエクスポート」ボタンから、投稿データをMarkdown形式でエクスポートできます。
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Notification Settings */}
         <Card className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-950 transition-colors duration-200 animate-fade-in">

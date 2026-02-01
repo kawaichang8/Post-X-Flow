@@ -53,6 +53,7 @@ import { PostGenerationCard } from "@/components/PostGenerationCard"
 import { ImageGenerator } from "@/components/ImageGenerator"
 import { OnboardingTour } from "@/components/OnboardingTour"
 import { EnhancedCalendar } from "@/components/EnhancedCalendar"
+import { ObsidianExport } from "@/components/ObsidianExport"
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
 import { ImprovementSuggestionsCard } from "@/components/ImprovementSuggestionsCard"
 import { cn } from "@/lib/utils"
@@ -415,6 +416,7 @@ function NewDashboardContent() {
       if (result.success) {
         showToast("ツイートが投稿されました", "success")
         setDrafts(prev => prev.filter(d => d.id !== post.id))
+        loadHistory() // 投稿履歴を即時更新
       } else {
         showToast(result.error || "ツイートの投稿に失敗しました", "error")
       }
@@ -457,6 +459,7 @@ function NewDashboardContent() {
       setSchedulingPost(null)
       setScheduleDate("")
       if (post.id.startsWith("format-")) setFormatDraft(null)
+      loadHistory() // 投稿履歴を即時更新
     } catch (error) {
       showToast("スケジュール設定に失敗しました", "error")
     }
@@ -628,6 +631,11 @@ function NewDashboardContent() {
 
   // Navigate between views
   const handleNavigate = (view: string) => {
+    // Redirect to standalone pages for certain views
+    if (view === "calendar" || view === "scheduled") {
+      router.push("/calendar")
+      return
+    }
     setActiveView(view)
   }
 
@@ -843,7 +851,7 @@ function NewDashboardContent() {
                 {/* Generated Posts */}
                 {drafts.length > 0 && (
                   <div className="space-y-5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                         生成された投稿
@@ -851,16 +859,32 @@ function NewDashboardContent() {
                           ({drafts.length}件)
                         </span>
                       </h2>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleGenerate(currentTrend, currentPurpose, "grok")}
-                        disabled={isGenerating}
-                        className="rounded-xl border-2 shadow-sm"
-                      >
-                        <RefreshCw className={cn("h-4 w-4 mr-2", isGenerating && "animate-spin")} />
-                        再生成
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {user && (
+                          <ObsidianExport
+                            userId={user.id}
+                            currentDrafts={drafts.map((d) => ({
+                              id: d.id,
+                              content: d.content,
+                              naturalness_score: d.naturalness_score,
+                              fact_score: d.fact_score,
+                              purpose: currentPurpose,
+                              trend: currentTrend,
+                            }))}
+                            className="border-2 shadow-sm"
+                          />
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleGenerate(currentTrend, currentPurpose, "grok")}
+                          disabled={isGenerating}
+                          className="rounded-xl border-2 shadow-sm"
+                        >
+                          <RefreshCw className={cn("h-4 w-4 mr-2", isGenerating && "animate-spin")} />
+                          再生成
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Post Cards - Horizontal Scroll on Mobile, Grid on Desktop */}

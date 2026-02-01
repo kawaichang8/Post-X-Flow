@@ -457,6 +457,7 @@ CREATE TABLE IF NOT EXISTS usage_tracking (
   generation_count INTEGER DEFAULT 0,
   post_count INTEGER DEFAULT 0,
   media_upload_count INTEGER DEFAULT 0,
+  quote_rt_generation_count INTEGER DEFAULT 0, -- Quote RT AI generation count for free tier
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(user_id, usage_date)
@@ -572,3 +573,31 @@ CREATE POLICY "Users can update own promotion settings"
   ON promotion_settings FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE INDEX IF NOT EXISTS idx_promotion_settings_user_id ON promotion_settings(user_id);
+
+-- ============================================
+-- USER SETTINGS (general user preferences)
+-- ============================================
+CREATE TABLE IF NOT EXISTS user_settings (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  obsidian_vault_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+COMMENT ON TABLE user_settings IS 'General user settings including Obsidian integration preferences';
+
+ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own settings" ON user_settings;
+DROP POLICY IF EXISTS "Users can insert own settings" ON user_settings;
+DROP POLICY IF EXISTS "Users can update own settings" ON user_settings;
+
+CREATE POLICY "Users can view own settings"
+  ON user_settings FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own settings"
+  ON user_settings FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own settings"
+  ON user_settings FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);

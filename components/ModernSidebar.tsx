@@ -116,7 +116,7 @@ export function ModernSidebar({
     { id: "format", label: "アイデア整形", icon: PenLine },
     { id: "history", label: "投稿", icon: FileText },
     { id: "generationHistory", label: "生成履歴", icon: History },
-    { id: "scheduled", label: "カレンダー", icon: Calendar },
+    { id: "calendar", label: "カレンダー", icon: Calendar, path: "/calendar" },
     { id: "analytics", label: "分析", icon: BarChart3, path: "/analytics" },
     // コミュニティは非表示（必要なら有効化）
     { id: "inspiration", label: "インスピレーション", icon: Quote, path: "/inspiration" },

@@ -15,6 +15,7 @@ export interface InspirationPost {
   created_at: string
   author_name?: string
   author_handle?: string
+  source?: "own" | "trending" | "search" // Source of the candidate
 }
 
 export interface QuoteRTDraft {
@@ -24,6 +25,17 @@ export interface QuoteRTDraft {
   fullText: string
   naturalnessScore: number
 }
+
+export interface QuoteRTCandidate {
+  id: string
+  post: InspirationPost
+  draft?: QuoteRTDraft
+  generatedAt?: string
+}
+
+// Free tier limits
+const FREE_TIER_DAILY_QUOTE_GENERATIONS = 3
+const FREE_TIER_DAILY_CANDIDATES_VIEW = 5
 
 const PROMOTION_NATURALNESS_PENALTY = 3
 
@@ -46,10 +58,98 @@ function estimateNaturalnessScore(text: string): number {
   return Math.max(0, Math.min(100, score))
 }
 
-// Fetch high engagement posts for inspiration
-export async function getInspirationPosts(userId: string, limit = 20): Promise<InspirationPost[]> {
+// Get quote RT generation count for today (free tier tracking)
+export async function getQuoteRTGenerationCountToday(userId: string): Promise<number> {
   try {
     const supabase = createServerClient()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const { data, error } = await supabase
+      .from("usage_tracking")
+      .select("quote_rt_generation_count")
+      .eq("user_id", userId)
+      .eq("usage_date", today.toISOString().split("T")[0])
+      .single()
+    
+    if (error && error.code !== "PGRST116") {
+      console.error("Error fetching quote RT generation count:", error)
+      return 0
+    }
+    
+    return data?.quote_rt_generation_count ?? 0
+  } catch (e) {
+    console.error("getQuoteRTGenerationCountToday error:", e)
+    return 0
+  }
+}
+
+// Increment quote RT generation count
+export async function incrementQuoteRTGenerationCount(userId: string): Promise<number> {
+  try {
+    const supabase = createServerClient()
+    const today = new Date().toISOString().split("T")[0]
+    
+    // Try to update existing record
+    const { data: existing, error: selectError } = await supabase
+      .from("usage_tracking")
+      .select("id, quote_rt_generation_count")
+      .eq("user_id", userId)
+      .eq("usage_date", today)
+      .single()
+    
+    if (selectError && selectError.code !== "PGRST116") {
+      console.error("Error checking usage_tracking:", selectError)
+      return 0
+    }
+    
+    if (existing) {
+      const newCount = (existing.quote_rt_generation_count ?? 0) + 1
+      await supabase
+        .from("usage_tracking")
+        .update({ quote_rt_generation_count: newCount, updated_at: new Date().toISOString() })
+        .eq("id", existing.id)
+      return newCount
+    } else {
+      // Insert new record
+      await supabase
+        .from("usage_tracking")
+        .insert({
+          user_id: userId,
+          usage_date: today,
+          quote_rt_generation_count: 1,
+        })
+      return 1
+    }
+  } catch (e) {
+    console.error("incrementQuoteRTGenerationCount error:", e)
+    return 0
+  }
+}
+
+// Check if user can generate quote RT (free tier limits)
+export async function canGenerateQuoteRT(userId: string, isPro: boolean): Promise<{ allowed: boolean; remaining: number; limit: number }> {
+  if (isPro) {
+    return { allowed: true, remaining: Infinity, limit: Infinity }
+  }
+  
+  const count = await getQuoteRTGenerationCountToday(userId)
+  const remaining = Math.max(0, FREE_TIER_DAILY_QUOTE_GENERATIONS - count)
+  
+  return {
+    allowed: remaining > 0,
+    remaining,
+    limit: FREE_TIER_DAILY_QUOTE_GENERATIONS,
+  }
+}
+
+// Fetch high engagement posts for inspiration
+export async function getInspirationPosts(userId: string, limit = 20, isPro = false): Promise<InspirationPost[]> {
+  try {
+    const supabase = createServerClient()
+    
+    // Apply free tier limit
+    const effectiveLimit = isPro ? limit : Math.min(limit, FREE_TIER_DAILY_CANDIDATES_VIEW)
     
     const { data, error } = await supabase
       .from("post_history")
@@ -58,7 +158,7 @@ export async function getInspirationPosts(userId: string, limit = 20): Promise<I
       .eq("status", "posted")
       .not("tweet_id", "is", null)
       .order("like_count", { ascending: false })
-      .limit(limit)
+      .limit(effectiveLimit)
 
     if (error) {
       console.error("Error fetching inspiration posts:", error)
@@ -75,6 +175,7 @@ export async function getInspirationPosts(userId: string, limit = 20): Promise<I
       impression_count: p.impression_count as number | null,
       engagement_rate: p.engagement_rate as number | null,
       created_at: p.created_at as string,
+      source: "own" as const,
     }))
   } catch (e) {
     console.error("getInspirationPosts error:", e)
@@ -82,13 +183,47 @@ export async function getInspirationPosts(userId: string, limit = 20): Promise<I
   }
 }
 
+// Get quote RT candidates including external tweets (Pro feature)
+export async function getQuoteRTCandidates(
+  userId: string,
+  isPro: boolean,
+  options?: { includeTrending?: boolean; searchQuery?: string }
+): Promise<{ candidates: InspirationPost[]; hasMore: boolean }> {
+  try {
+    // Get user's own high-engagement posts
+    const ownPosts = await getInspirationPosts(userId, isPro ? 20 : FREE_TIER_DAILY_CANDIDATES_VIEW, isPro)
+    
+    // For now, we only return own posts
+    // External tweet fetching would require X API Premium access
+    // Future enhancement: Add trending/search candidates for Pro users
+    
+    return {
+      candidates: ownPosts,
+      hasMore: !isPro && ownPosts.length >= FREE_TIER_DAILY_CANDIDATES_VIEW,
+    }
+  } catch (e) {
+    console.error("getQuoteRTCandidates error:", e)
+    return { candidates: [], hasMore: false }
+  }
+}
+
 // Generate AI comment for quote RT
 export async function generateQuoteRTDraft(
   userId: string,
   originalPost: InspirationPost,
-  userContext?: string
+  userContext?: string,
+  isPro = false
 ): Promise<QuoteRTDraft | null> {
   try {
+    // Check free tier limits
+    if (!isPro) {
+      const { allowed, remaining } = await canGenerateQuoteRT(userId, false)
+      if (!allowed) {
+        console.warn(`[generateQuoteRTDraft] Free tier limit reached for user ${userId}. Remaining: ${remaining}`)
+        return null
+      }
+    }
+    
     const { getGrokApiKey, getAnthropicApiKey } = await import("@/lib/server-only")
     
     let apiKey: string | null = null
@@ -161,6 +296,11 @@ ${userContext ? `- ユーザーの追加コンテキスト: ${userContext}` : ""
 
     if (!generatedComment) {
       return null
+    }
+    
+    // Increment usage count for free tier
+    if (!isPro) {
+      await incrementQuoteRTGenerationCount(userId)
     }
 
     // Apply promotion settings if enabled

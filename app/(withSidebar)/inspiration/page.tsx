@@ -1,18 +1,29 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { getInspirationPosts, generateQuoteRTDraft, postQuoteRT, postSimpleRetweet, scheduleRetweet, InspirationPost, QuoteRTDraft } from "@/app/actions-inspiration"
+import { 
+  getInspirationPosts, 
+  generateQuoteRTDraft, 
+  postQuoteRT, 
+  postSimpleRetweet, 
+  scheduleRetweet, 
+  canGenerateQuoteRT,
+  type InspirationPost, 
+  type QuoteRTDraft 
+} from "@/app/actions-inspiration"
 import { getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, TwitterAccount } from "@/app/actions"
 import { useSubscription } from "@/hooks/useSubscription"
 import { ProCard } from "@/components/ProCard"
 import { RetweetModal } from "@/components/RetweetModal"
 import { InspirationList } from "@/components/InspirationList"
+import { QuoteRTEditor } from "@/components/QuoteRTEditor"
+import { ObsidianExport } from "@/components/ObsidianExport"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import {
   AlertDialog,
@@ -26,7 +37,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
-import { Quote, Sparkles, Loader2, Send } from "lucide-react"
+import { Quote, Sparkles, Loader2, Info, Crown } from "lucide-react"
 
 interface User {
   id: string
@@ -44,11 +55,17 @@ export default function InspirationPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [generatingFor, setGeneratingFor] = useState<string | null>(null)
   const [draft, setDraft] = useState<QuoteRTDraft | null>(null)
-  const [editedComment, setEditedComment] = useState("")
   const [userContext, setUserContext] = useState("")
-  const [posting, setPosting] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
   const [retweetModalPost, setRetweetModalPost] = useState<InspirationPost | null>(null)
+  
+  // New: Quote RT Editor state
+  const [quoteEditorPost, setQuoteEditorPost] = useState<InspirationPost | null>(null)
+  const [quoteEditorDraft, setQuoteEditorDraft] = useState<QuoteRTDraft | null>(null)
+  const [isQuoteEditorGenerating, setIsQuoteEditorGenerating] = useState(false)
+  
+  // Free tier usage tracking
+  const [generationsRemaining, setGenerationsRemaining] = useState<number>(3)
+  const [generationsLimit, setGenerationsLimit] = useState<number>(3)
 
   const { isPro, startCheckout } = useSubscription(user?.id ?? null)
   const upgradeEnabled = process.env.NEXT_PUBLIC_UPGRADE_ENABLED !== "false"
@@ -75,17 +92,30 @@ export default function InspirationPage() {
     check()
   }, [router])
 
+  // Load usage limits
+  const loadUsageLimits = useCallback(async () => {
+    if (!user) return
+    try {
+      const result = await canGenerateQuoteRT(user.id, isPro)
+      setGenerationsRemaining(result.remaining === Infinity ? 999 : result.remaining)
+      setGenerationsLimit(result.limit === Infinity ? 999 : result.limit)
+    } catch (e) {
+      console.warn("Failed to load usage limits:", e)
+    }
+  }, [user, isPro])
+
   useEffect(() => {
     if (!user) return
     loadPosts()
     loadTwitterAccounts()
-  }, [user])
+    loadUsageLimits()
+  }, [user, isPro, loadUsageLimits])
 
   const loadPosts = async () => {
     if (!user) return
     setLoadingPosts(true)
     try {
-      const data = await getInspirationPosts(user.id)
+      const data = await getInspirationPosts(user.id, 20, isPro)
       setPosts(data)
     } catch (e) {
       showToast("投稿の取得に失敗しました", "error")
@@ -109,25 +139,79 @@ export default function InspirationPage() {
   }
 
   const handleGenerateQuoteRT = async (post: InspirationPost) => {
-    if (!user || !isPro) {
-      showToast("この機能はProプランで利用可能です", "error")
+    // Check free tier limits
+    if (!isPro && generationsRemaining <= 0) {
+      showToast("本日のAI生成回数の上限に達しました。Proにアップグレードすると無制限に利用できます。", "error")
       return
     }
-    setGeneratingFor(post.id)
-    setDraft(null)
+    
+    // Open the quote editor modal
+    setQuoteEditorPost(post)
+    setQuoteEditorDraft(null)
+  }
+  
+  // Handle AI generation in Quote RT Editor
+  const handleQuoteEditorGenerate = async (context?: string) => {
+    if (!user || !quoteEditorPost) return
+    
+    // Check free tier limits again
+    if (!isPro && generationsRemaining <= 0) {
+      showToast("本日のAI生成回数の上限に達しました", "error")
+      return
+    }
+    
+    setIsQuoteEditorGenerating(true)
     try {
-      const result = await generateQuoteRTDraft(user.id, post, userContext || undefined)
+      const result = await generateQuoteRTDraft(user.id, quoteEditorPost, context, isPro)
       if (result) {
-        setDraft(result)
-        setEditedComment(result.generatedComment)
+        setQuoteEditorDraft(result)
+        // Refresh usage limits after generation
+        await loadUsageLimits()
       } else {
         showToast("コメントの生成に失敗しました", "error")
       }
     } catch (e) {
       showToast("エラーが発生しました", "error")
     } finally {
-      setGeneratingFor(null)
+      setIsQuoteEditorGenerating(false)
     }
+  }
+  
+  // Handle post from Quote RT Editor
+  const handleQuoteEditorPost = async (comment: string) => {
+    if (!user || !selectedAccountId || !quoteEditorPost?.tweet_id) {
+      return { success: false, error: "必要な情報が不足しています" }
+    }
+    
+    const account = await getTwitterAccountById(selectedAccountId, user.id)
+    if (!account?.access_token) {
+      return { success: false, error: "Twitterアカウントが見つかりません" }
+    }
+    
+    const result = await postQuoteRT(user.id, comment, quoteEditorPost.tweet_id, account.access_token, selectedAccountId)
+    if (result.success) {
+      showToast("引用RTを投稿しました！", "success")
+      loadPosts()
+    }
+    return result
+  }
+  
+  // Handle schedule from Quote RT Editor
+  const handleQuoteEditorSchedule = async (comment: string, scheduledFor: Date) => {
+    if (!user || !quoteEditorPost?.tweet_id) {
+      return { success: false, error: "必要な情報が不足しています" }
+    }
+    
+    const result = await scheduleRetweet(user.id, quoteEditorPost.tweet_id, "quote", {
+      comment,
+      scheduledFor,
+      twitterAccountId: selectedAccountId ?? undefined,
+    })
+    
+    if (result.success) {
+      showToast(`引用RTを ${scheduledFor.toLocaleString("ja-JP")} に予約しました`, "success")
+    }
+    return result
   }
 
   const handlePostSimpleRetweet = async (tweetId: string) => {
@@ -158,41 +242,6 @@ export default function InspirationPage() {
     })
   }
 
-  const handlePost = async () => {
-    if (!user || !draft || !selectedAccountId) return
-    const account = await getTwitterAccountById(selectedAccountId, user.id)
-    if (!account?.access_token) {
-      showToast("Twitterアカウントが見つかりません", "error")
-      return
-    }
-    if (!draft.originalPost.tweet_id) {
-      showToast("元ツイートIDが不明です", "error")
-      return
-    }
-    setPosting(true)
-    try {
-      const result = await postQuoteRT(
-        user.id,
-        editedComment,
-        draft.originalPost.tweet_id,
-        account.access_token,
-        selectedAccountId
-      )
-      if (result.success) {
-        showToast("引用RTを投稿しました！", "success")
-        setDraft(null)
-        setEditedComment("")
-        setShowConfirm(false)
-      } else {
-        showToast(result.error || "投稿に失敗しました", "error")
-      }
-    } catch (e) {
-      showToast("投稿中にエラーが発生しました", "error")
-    } finally {
-      setPosting(false)
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -203,15 +252,69 @@ export default function InspirationPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-400 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-          <Quote className="h-6 w-6 text-white" />
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-400 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <Quote className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">インスピレーション</h1>
+            <p className="text-muted-foreground text-sm">過去の人気投稿から引用RTのアイデアを生成</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">インスピレーション</h1>
-          <p className="text-muted-foreground text-sm">過去の人気投稿から引用RTのアイデアを生成</p>
-        </div>
+        
+        {user && (
+          <ObsidianExport
+            userId={user.id}
+            className="border-2 shadow-sm"
+          />
+        )}
       </div>
+
+      {/* Free tier usage info */}
+      {!isPro && (
+        <Card className="rounded-2xl border-purple-500/20 bg-purple-50/50 dark:bg-purple-950/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Info className="h-5 w-5 text-purple-500" />
+                <div>
+                  <p className="text-sm font-medium">無料プランの利用状況</p>
+                  <p className="text-xs text-muted-foreground">
+                    本日のAI生成: {generationsLimit === 999 ? "無制限" : `${generationsLimit - generationsRemaining}/${generationsLimit}回`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge 
+                  variant={generationsRemaining > 0 ? "secondary" : "destructive"}
+                  className="rounded-lg"
+                >
+                  残り {generationsRemaining === 999 ? "∞" : generationsRemaining} 回
+                </Badge>
+                {upgradeEnabled && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUpgrade}
+                    className="rounded-xl border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
+                  >
+                    <Crown className="h-3.5 w-3.5 mr-1.5" />
+                    無制限にする
+                  </Button>
+                )}
+              </div>
+            </div>
+            {generationsRemaining < generationsLimit && (
+              <Progress 
+                value={(generationsRemaining / generationsLimit) * 100} 
+                className="h-1.5 mt-3 [&>div]:bg-purple-500" 
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!isPro && upgradeEnabled && (
         <ProCard config={{ spotsLeft: 5, spotsTotal: 5, currentPlan: "Free" }} onUpgrade={handleUpgrade} variant="compact" showAsUpgrade={true} />
@@ -291,58 +394,21 @@ export default function InspirationPage() {
         }}
       />
 
-      {draft && (
-        <Card className="rounded-2xl border-2 border-purple-500/30 shadow-xl bg-card/90 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-purple-500" />
-              引用RTプレビュー
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">あなたのコメント</label>
-              <Textarea value={editedComment} onChange={(e) => setEditedComment(e.target.value)} rows={3} className="rounded-xl resize-none" />
-              <div className="flex items-center justify-between text-xs">
-                <span className={cn(editedComment.length > 140 ? "text-red-500" : "text-muted-foreground")}>{editedComment.length}/280</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span>自然さスコア</span>
-                <span className={cn("font-medium", draft.naturalnessScore >= 80 ? "text-green-500" : draft.naturalnessScore >= 60 ? "text-yellow-500" : "text-red-500")}>{draft.naturalnessScore}/100</span>
-              </div>
-              <Progress value={draft.naturalnessScore} className={cn("h-2", draft.naturalnessScore >= 80 ? "[&>div]:bg-green-500" : draft.naturalnessScore >= 60 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500")} />
-            </div>
-            <div className="p-3 rounded-xl bg-muted/50 border">
-              <p className="text-xs text-muted-foreground mb-1">引用元</p>
-              <p className="text-sm">{draft.originalPost.text}</p>
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setDraft(null)} className="flex-1 rounded-xl">キャンセル</Button>
-              <Button onClick={() => setShowConfirm(true)} disabled={!editedComment.trim() || editedComment.length > 280} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
-                <Send className="h-4 w-4 mr-2" />
-                投稿する
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent className="rounded-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>引用RTを投稿しますか？</AlertDialogTitle>
-            <AlertDialogDescription>この投稿は即座にXに公開されます。</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl">キャンセル</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePost} disabled={posting} className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600">
-              {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : "投稿する"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Quote RT Editor Modal */}
+      <QuoteRTEditor
+        isOpen={!!quoteEditorPost}
+        onClose={() => {
+          setQuoteEditorPost(null)
+          setQuoteEditorDraft(null)
+        }}
+        post={quoteEditorPost}
+        draft={quoteEditorDraft}
+        isGenerating={isQuoteEditorGenerating}
+        onGenerate={handleQuoteEditorGenerate}
+        onRegenerate={() => handleQuoteEditorGenerate(userContext)}
+        onPost={handleQuoteEditorPost}
+        onSchedule={handleQuoteEditorSchedule}
+      />
     </div>
   )
 }
