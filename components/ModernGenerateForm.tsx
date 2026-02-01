@@ -99,8 +99,8 @@ export function ModernGenerateForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!trend.trim()) return
-    await onGenerate(trend, purpose, aiProvider, isPro ? abMode : false, contextMode, factCheck)
+    if (!purpose.trim()) return
+    await onGenerate(trend.trim(), purpose, aiProvider, isPro ? abMode : false, contextMode, factCheck)
   }
 
   return (
@@ -126,7 +126,7 @@ export function ModernGenerateForm({
             <div className="space-y-2" id="trend-input">
               <div className="flex items-center gap-2">
                 <Label htmlFor="trend" className="text-sm font-medium">
-                  トレンド・キーワード
+                  トレンド・キーワード（任意）
                 </Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -136,8 +136,8 @@ export function ModernGenerateForm({
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[280px]">
                     <p className="text-xs">
-                      投稿に関連するトレンドやキーワードを入力してください。
-                      例：「#日曜劇場リブート」「AIトレンド」「ChatGPT活用」
+                      投稿に関連するトレンドやキーワードを入力。空欄の場合は目的のみで通常投稿を生成します。
+                      例：「#日曜劇場リブート」「AIトレンド」
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -148,9 +148,8 @@ export function ModernGenerateForm({
                   id="trend"
                   value={trend}
                   onChange={(e) => setTrend(e.target.value)}
-                  placeholder="例：#日曜劇場リブート、AIトレンド"
+                  placeholder="空欄で通常投稿（目的のみで生成）"
                   className="pl-10 h-11 rounded-xl border-2 border-muted focus:border-primary transition-colors"
-                  required
                 />
               </div>
               {userId && (
@@ -338,7 +337,7 @@ export function ModernGenerateForm({
             <Button
               id="generate-button"
               type="submit"
-              disabled={isLoading || !trend.trim()}
+              disabled={isLoading || !purpose.trim()}
               className={cn(
                 "w-full h-14 rounded-2xl text-base font-semibold transition-all duration-300",
                 "btn-gradient-premium text-white",

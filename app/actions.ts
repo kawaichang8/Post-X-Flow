@@ -5,6 +5,7 @@ import { createServerClient } from "@/lib/supabase"
 import { getPromotionSettingsForGeneration } from "@/app/actions-promotion"
 import { postTweet, getTweetEngagement, getTrendingTopics, Trend, refreshTwitterAccessToken, uploadMedia, searchPlaces, Place, getAppOnlyBearerToken, getPersonalizedTrends } from "@/lib/x-post"
 import { generateEyeCatchImage, generateImageVariations, downloadImageAsBuffer, GeneratedImage } from "@/lib/image-generator"
+import { fetchNewsTrends } from "@/lib/external-apis"
 import { classifyError, logErrorToSentry, AppError, ErrorType } from "@/lib/error-handler"
 
 interface PostHistoryItem {
@@ -769,12 +770,34 @@ export async function getTrendsForUser(
       return { trends }
     } catch (woeidError) {
       console.warn("[getTrendsForUser] WOEID trends failed:", woeidError)
-      // 両方失敗した場合
-      const message = woeidError instanceof Error ? woeidError.message : "トレンドの取得に失敗しました。"
-      return {
-        trends: [],
-        error: `トレンド取得に失敗しました。Free プランでは X API のトレンド機能が制限されている場合があります。トレンド欄にハッシュタグを手動で入力して投稿できます。詳細: ${message}`
+    }
+
+    // 4. X API 両方失敗時: News API で代用（日本トップニュースからトレンド候補を取得）
+    const newsApiKey = process.env.NEWS_API_KEY?.trim()
+    if (newsApiKey) {
+      try {
+        console.log("[getTrendsForUser] Falling back to News API...")
+        const newsInsight = await fetchNewsTrends(newsApiKey, "jp")
+        if (newsInsight?.trendingTopics && newsInsight.trendingTopics.length > 0) {
+          const trends: Trend[] = newsInsight.trendingTopics.slice(0, 15).map((name) => ({
+            name,
+            query: name,
+            tweetVolume: null,
+          }))
+          return {
+            trends,
+            error: "Xのトレンドは利用できませんでした。ニュースの話題を表示しています。",
+          }
+        }
+      } catch (newsError) {
+        console.warn("[getTrendsForUser] News API fallback failed:", newsError)
       }
+    }
+
+    // どれも失敗した場合
+    return {
+      trends: [],
+      error: "トレンド取得に失敗しました。Free プランでは X API のトレンドが制限されている場合があります。NEWS_API_KEY を設定するとニュースの話題で代用できます。トレンド欄にハッシュタグを手動で入力して投稿することもできます。",
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : "トレンドの取得に失敗しました。"

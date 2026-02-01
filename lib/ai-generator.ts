@@ -145,8 +145,9 @@ async function generateWithClaude(trend: string, purpose: string, scoreConfig?: 
   const contextSection = pastPostsContext?.trim()
     ? `【ユーザーの直近投稿（流れを踏まえる）】\n${pastPostsContext}\n\n上記の投稿の流れ・テーマを踏まえ、自然につながる投稿案を生成してください。前回の締めやテーマから続く導入を検討すること。\n\n`
     : ''
+  const trendLabel = trend.trim() || '（トレンド指定なし・目的に沿った通常投稿）'
   const prompt = PROMPT_TEMPLATE
-    .replace('{trend}', trend)
+    .replace('{trend}', trendLabel)
     .replace('{purpose}', purpose)
     .replace('{contextSection}', contextSection)
 
@@ -353,8 +354,9 @@ async function generateWithGrok(
     ? `- **最新知識の活用**: 上記の最新トレンド情報を活用し、時事性の高い内容を含める\n- **リアルタイム性**: 最新の情報や話題を自然に織り交ぜる`
     : ''
   
+  const trendLabel = trend.trim() || '（トレンド指定なし・目的に沿った通常投稿）'
   const prompt = GROK_PROMPT_TEMPLATE
-    .replace('{trend}', trend)
+    .replace('{trend}', trendLabel)
     .replace('{purpose}', purpose)
     .replace('{contextSection}', contextSection)
     .replace('{realtimeKnowledge}', realtimeKnowledgeSection)
