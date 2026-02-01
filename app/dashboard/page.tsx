@@ -7,7 +7,8 @@ import { PostDraft } from "@/lib/ai-generator"
 import { 
   generatePostDrafts, 
   generatePostDraftsAB,
-  approveAndPostTweet, 
+  approveAndPostTweet,
+  approveAndPostTweetWithImage,
   savePostToHistory, 
   scheduleTweet, 
   getScheduledTweets, 
@@ -45,6 +46,7 @@ import { useToast } from "@/components/ui/toast"
 import { ModernSidebar } from "@/components/ModernSidebar"
 import { ModernGenerateForm } from "@/components/ModernGenerateForm"
 import { PostGenerationCard } from "@/components/PostGenerationCard"
+import { ImageGenerator } from "@/components/ImageGenerator"
 import { OnboardingTour } from "@/components/OnboardingTour"
 import { EnhancedCalendar } from "@/components/EnhancedCalendar"
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard"
@@ -376,19 +378,29 @@ function NewDashboardContent() {
         naturalnessScore: post.naturalness_score,
         hashtags: [],
       }
-      const result = await approveAndPostTweet(
-        user.id,
-        draft,
-        account.access_token,
-        currentTrend,
-        currentPurpose,
-        selectedAccountId,
-        {
-          ...(abTestId ? { abTestId } : {}),
-          contextUsed: post.context_used,
-          factScore: post.fact_score ?? undefined,
-        }
-      )
+      const result = post.mediaUrl
+        ? await approveAndPostTweetWithImage(
+            user.id,
+            draft,
+            account.access_token,
+            currentTrend,
+            currentPurpose,
+            post.mediaUrl,
+            selectedAccountId
+          )
+        : await approveAndPostTweet(
+            user.id,
+            draft,
+            account.access_token,
+            currentTrend,
+            currentPurpose,
+            selectedAccountId,
+            {
+              ...(abTestId ? { abTestId } : {}),
+              contextUsed: post.context_used,
+              factScore: post.fact_score ?? undefined,
+            }
+          )
       if (result.success) {
         showToast("ツイートが投稿されました", "success")
         setDrafts(prev => prev.filter(d => d.id !== post.id))
@@ -476,6 +488,13 @@ function NewDashboardContent() {
       d.id === postId ? { ...d, content: newContent } : d
     ))
   }
+
+  // Set eye-catch image for a draft (AI-generated image selected)
+  const handleMediaSelect = useCallback((postId: string, imageUrl: string) => {
+    setDrafts(prev => prev.map(d =>
+      d.id === postId ? { ...d, mediaUrl: imageUrl, mediaType: "image" as const } : d
+    ))
+  }, [])
 
   // Post a scheduled tweet now (semi-auto: user clicks "投稿する")
   const handlePostScheduled = async (postId: string) => {
@@ -765,7 +784,7 @@ function NewDashboardContent() {
                     <div className="relative">
                       <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin md:grid md:grid-cols-2 lg:grid-cols-3 md:overflow-visible md:pb-0">
                         {drafts.map((post, index) => (
-                          <div key={post.id} className="min-w-[300px] md:min-w-0">
+                          <div key={post.id} className="min-w-[300px] md:min-w-0 space-y-3">
                             <PostGenerationCard
                               post={post}
                               index={index}
@@ -773,7 +792,16 @@ function NewDashboardContent() {
                               onPost={() => handlePost(post.id)}
                               onSchedule={() => setSchedulingPost(post)}
                               onSaveDraft={() => handleSaveDraft(post.id)}
+                              maxCharacters={isPro ? 280 : 140}
                               isPosting={isPosting}
+                            />
+                            <ImageGenerator
+                              tweetText={post.content}
+                              trend={currentTrend}
+                              purpose={currentPurpose}
+                              onImageSelect={(url) => handleMediaSelect(post.id, url)}
+                              selectedImageUrl={post.mediaUrl ?? null}
+                              className="rounded-2xl border border-border/50 overflow-hidden"
                             />
                           </div>
                         ))}

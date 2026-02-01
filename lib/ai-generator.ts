@@ -764,14 +764,25 @@ export async function factCheckDraft(
           getGrokApiKey()
           return await factCheckWithGrok(prompt)
         } catch (grokErr) {
-          // Grok key not set or API error: return 50 + suggestion instead of throwing
           const suggestion = factCheckFailureSuggestion(grokErr)
           return { score: 50, suggestions: [suggestion] }
         }
       }
     }
-    getGrokApiKey()
-    return await factCheckWithGrok(prompt)
+    // aiProvider === 'grok': try Grok first, fall back to Claude if Grok key missing or API error
+    try {
+      getGrokApiKey()
+      return await factCheckWithGrok(prompt)
+    } catch (e) {
+      console.warn('[factCheck] Grok failed, falling back to Claude:', e instanceof Error ? e.message : e)
+      try {
+        getAnthropicApiKey()
+        return await factCheckWithClaude(prompt)
+      } catch (claudeErr) {
+        const suggestion = factCheckFailureSuggestion(claudeErr)
+        return { score: 50, suggestions: [suggestion] }
+      }
+    }
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e)
     const errStack = e instanceof Error ? e.stack : undefined

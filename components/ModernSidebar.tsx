@@ -14,7 +14,6 @@ import {
   X,
   Plus,
   User,
-  Users,
   ChevronLeft,
   ChevronRight,
   Sparkles,
@@ -117,7 +116,7 @@ export function ModernSidebar({
     { id: "generationHistory", label: "生成履歴", icon: History },
     { id: "scheduled", label: "カレンダー", icon: Calendar },
     { id: "analytics", label: "分析", icon: BarChart3, path: "/analytics" },
-    { id: "community", label: "コミュニティ", icon: Users },
+    // コミュニティは非表示（必要なら有効化）
     { id: "inspiration", label: "インスピレーション", icon: Quote, path: "/inspiration" },
     { id: "promotion", label: "宣伝設定", icon: Megaphone, path: "/settings/promotion" },
     { id: "settings", label: "設定", icon: Settings, path: "/settings" },
