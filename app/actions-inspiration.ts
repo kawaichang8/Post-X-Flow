@@ -62,7 +62,7 @@ const FREE_TIER_DAILY_CANDIDATES_VIEW = 5
  * - https://mobile.twitter.com/username/status/1234567890
  * - Just the ID: 1234567890
  */
-export function extractTweetIdFromUrl(urlOrId: string): string | null {
+export async function extractTweetIdFromUrl(urlOrId: string): Promise<string | null> {
   const trimmed = urlOrId.trim()
   
   // If it's just a numeric ID
@@ -99,7 +99,7 @@ export async function fetchExternalTweet(
   accessToken: string
 ): Promise<{ success: boolean; tweet?: InspirationPost; error?: string }> {
   try {
-    const tweetId = extractTweetIdFromUrl(urlOrId)
+    const tweetId = await extractTweetIdFromUrl(urlOrId)
     if (!tweetId) {
       return { success: false, error: "無効なURLまたはツイートIDです。XのツイートURLを貼り付けてください。" }
     }
