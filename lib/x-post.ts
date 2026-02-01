@@ -1,5 +1,5 @@
 import 'server-only'
-import { TwitterApi } from 'twitter-api-v2'
+import { TwitterApi, ApiResponseError } from 'twitter-api-v2'
 import { classifyError, retryWithBackoff, logErrorToSentry, ErrorType, AppError } from './error-handler'
 import { getTwitterClientId, getTwitterClientSecret } from './server-only'
 
@@ -428,8 +428,8 @@ export async function fetchTweetById(
     })
 
     if (!tweet.data) {
-      console.error('[fetchTweetById] Tweet not found:', tweetId)
-      return null
+      console.error('[fetchTweetById] Tweet not found (no data):', tweetId)
+      throw new Error('このツイートは削除されているか、非公開のため取得できません。')
     }
 
     const author = tweet.includes?.users?.[0]
@@ -455,8 +455,27 @@ export async function fetchTweetById(
       createdAt: tweet.data.created_at || new Date().toISOString(),
     }
   } catch (error) {
+    if (error instanceof ApiResponseError) {
+      const code = error.code
+      const detail = error.data?.detail ?? error.data?.title ?? ''
+      if (code === 404) {
+        throw new Error('このツイートは存在しないか、削除されています。')
+      }
+      if (code === 403) {
+        throw new Error('このツイートへのアクセスが拒否されました。非公開アカウントの可能性があります。')
+      }
+      if (code === 429 || error.rateLimitError) {
+        throw new Error('リクエスト上限に達しました。しばらく待ってからお試しください。')
+      }
+      if (detail) {
+        throw new Error(`ツイートの取得に失敗しました: ${detail}`)
+      }
+    }
+    if (error instanceof Error && error.message.startsWith('このツイート')) {
+      throw error
+    }
     console.error('[fetchTweetById] Error:', error)
-    return null
+    throw new Error('ツイートの取得に失敗しました。しばらく経ってから再度お試しください。')
   }
 }
 

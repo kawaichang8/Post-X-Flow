@@ -729,8 +729,7 @@ export async function getTrends(accessToken: string): Promise<Trend[]> {
 }
 
 // Get trending topics for the current user.
-// Free プランでは /2/users/personalized_trends (ユーザートークン) を使用。
-// Basic/Pro プランでは /2/trends/by/woeid (Bearer Token) を使用。
+// 日本トレンドを優先: 1) WOEID 日本 (Bearer), 2) personalized_trends, 3) News API (jp).
 // Returns { trends, error? } so the client gets a 200 with error message instead of 500.
 export async function getTrendsForUser(
   userId: string,
@@ -739,16 +738,29 @@ export async function getTrendsForUser(
   try {
     const supabaseAdmin = createServerClient()
 
-    // 1. ユーザーのアクセストークンを取得
+    // 1. WOEID 日本を最優先（Bearer Token があれば日本のトレンド＝日本語・日本向け）
+    try {
+      const bearerToken = await getAppOnlyBearerToken()
+      if (bearerToken) {
+        console.log("[getTrendsForUser] Trying WOEID Japan (23424856) with Bearer token...")
+        const trends = await getTrends(bearerToken)
+        if (trends.length > 0) {
+          return { trends }
+        }
+      }
+    } catch (woeidError) {
+      console.warn("[getTrendsForUser] WOEID Japan failed:", woeidError)
+    }
+
+    // 2. ユーザートークンで personalized_trends を試す（アカウントの言語・地域に依存）
     const accountQuery = supabaseAdmin
       .from("user_twitter_tokens")
       .select("id, access_token, refresh_token")
       .eq("user_id", userId)
-    const { data: account, error: accountError } = accountId
+    const { data: account } = accountId
       ? await accountQuery.eq("id", accountId).maybeSingle()
       : await accountQuery.eq("is_default", true).maybeSingle()
 
-    // 2. ユーザートークンがあれば personalized_trends を試す（Free プラン対応）
     if (account?.access_token) {
       try {
         console.log("[getTrendsForUser] Trying personalized_trends with user token...")
@@ -758,21 +770,10 @@ export async function getTrendsForUser(
         }
       } catch (personalizedError) {
         console.warn("[getTrendsForUser] personalized_trends failed:", personalizedError)
-        // フォールバックで WOEID を試す
       }
     }
 
-    // 3. WOEID エンドポイントを試す（Basic/Pro プラン向け）
-    try {
-      console.log("[getTrendsForUser] Trying WOEID trends with Bearer token...")
-      const bearerToken = await getAppOnlyBearerToken()
-      const trends = await getTrends(bearerToken)
-      return { trends }
-    } catch (woeidError) {
-      console.warn("[getTrendsForUser] WOEID trends failed:", woeidError)
-    }
-
-    // 4. X API 両方失敗時: News API で代用（日本トップニュースからトレンド候補を取得）
+    // 3. X API 両方失敗時: News API で代用（日本トップニュースからトレンド候補を取得）
     const newsApiKey = process.env.NEWS_API_KEY?.trim()
     if (newsApiKey) {
       try {

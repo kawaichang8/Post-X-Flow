@@ -59,27 +59,33 @@ const FREE_TIER_DAILY_CANDIDATES_VIEW = 5
  * - https://x.com/username/status/1234567890
  * - https://twitter.com/username/status/1234567890
  * - https://x.com/i/status/1234567890
+ * - https://x.com/i/web/status/1234567890
  * - https://mobile.twitter.com/username/status/1234567890
+ * - Trailing slash or query params
  * - Just the ID: 1234567890
  */
 export async function extractTweetIdFromUrl(urlOrId: string): Promise<string | null> {
   const trimmed = urlOrId.trim()
+  if (!trimmed) return null
   
-  // If it's just a numeric ID
+  // If it's just a numeric ID (snowflake: 15–20 digits)
+  if (/^\d{15,20}$/.test(trimmed)) {
+    return trimmed
+  }
   if (/^\d+$/.test(trimmed)) {
     return trimmed
   }
   
-  // Try to parse as URL
   try {
     const url = new URL(trimmed)
-    // Match /status/ID or /statuses/ID patterns
-    const match = url.pathname.match(/\/status(?:es)?\/(\d+)/)
+    // pathname: /user/status/123 or /i/web/status/123 (no trailing slash in URL spec, but strip for safety)
+    const path = url.pathname.replace(/\/+$/, "")
+    const match = path.match(/\/status(?:es)?\/(\d+)/)
     if (match) {
       return match[1]
     }
   } catch {
-    // Not a valid URL, try regex directly
+    // Not a valid URL, try regex on raw string
     const match = trimmed.match(/\/status(?:es)?\/(\d+)/)
     if (match) {
       return match[1]
@@ -101,14 +107,20 @@ export async function fetchExternalTweet(
   try {
     const tweetId = await extractTweetIdFromUrl(urlOrId)
     if (!tweetId) {
-      return { success: false, error: "無効なURLまたはツイートIDです。XのツイートURLを貼り付けてください。" }
+      return { success: false, error: "無効なURLまたはツイートIDです。x.com または twitter.com のツイートURLをそのまま貼り付けてください。" }
     }
     
     const { fetchTweetById } = await import("@/lib/x-post")
-    const fetched = await fetchTweetById(tweetId, accessToken)
+    let fetched
+    try {
+      fetched = await fetchTweetById(tweetId, accessToken)
+    } catch (apiError) {
+      const msg = apiError instanceof Error ? apiError.message : "ツイートの取得に失敗しました。"
+      return { success: false, error: `${msg}（ID: ${tweetId}）` }
+    }
     
     if (!fetched) {
-      return { success: false, error: "ツイートが見つかりませんでした。URLを確認してください。" }
+      return { success: false, error: `ツイートを取得できませんでした。（ID: ${tweetId}）削除・非公開の可能性があります。` }
     }
     
     // Convert to InspirationPost format
