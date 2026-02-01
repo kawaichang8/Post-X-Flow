@@ -21,7 +21,8 @@ import {
   Zap,
   Megaphone,
   Quote,
-  History
+  History,
+  PenLine
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
@@ -111,7 +112,8 @@ export function ModernSidebar({
     path?: string
   }
   const allNavItems: NavItemType[] = [
-    { id: "create", label: "ホーム", icon: Home },
+    { id: "create", label: "クイック投稿", icon: Home },
+    { id: "format", label: "アイデア整形", icon: PenLine },
     { id: "history", label: "投稿", icon: FileText },
     { id: "generationHistory", label: "生成履歴", icon: History },
     { id: "scheduled", label: "カレンダー", icon: Calendar },

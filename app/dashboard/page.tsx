@@ -19,7 +19,8 @@ import {
   getDefaultTwitterAccount, 
   getTwitterAccountById,
   setDefaultTwitterAccount, 
-  TwitterAccount 
+  TwitterAccount,
+  improveTweetTextAction,
 } from "@/app/actions"
 import {
   saveGenerationHistory,
@@ -31,6 +32,9 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   AlertDialog,
@@ -57,7 +61,7 @@ import { ProCard } from "@/components/ProCard"
 import { UsageLimitWarning } from "@/components/ProFeatureLock"
 import { useSubscription } from "@/hooks/useSubscription"
 import { incrementGenerationCount } from "@/app/actions-subscription"
-import { Loader2, RefreshCw, Sparkles, History, Heart, Eye, Bell, Send, Trash2, ChevronDown, ChevronRight } from "lucide-react"
+import { Loader2, RefreshCw, Sparkles, History, Heart, Eye, Bell, Send, Trash2, ChevronDown, ChevronRight, PenLine, Zap } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 
@@ -140,6 +144,13 @@ function NewDashboardContent() {
 
   // Fact-check warning: show before post/schedule when fact_score < 70
   const [pendingPostAction, setPendingPostAction] = useState<{ type: "post"; post: GeneratedPost } | { type: "schedule"; post: GeneratedPost; scheduleDate: string } | null>(null)
+
+  // アイデア整形ビュー
+  const [formatInput, setFormatInput] = useState("")
+  const [formatDraft, setFormatDraft] = useState<GeneratedPost | null>(null)
+  const [isFormatting, setIsFormatting] = useState(false)
+  const [formatPurpose, setFormatPurpose] = useState("engagement")
+  const [formatAiProvider, setFormatAiProvider] = useState<"grok" | "claude">("grok")
 
   // Subscription state
   const {
@@ -445,6 +456,7 @@ function NewDashboardContent() {
       setDrafts(prev => prev.filter(d => d.id !== post.id))
       setSchedulingPost(null)
       setScheduleDate("")
+      if (post.id.startsWith("format-")) setFormatDraft(null)
     } catch (error) {
       showToast("スケジュール設定に失敗しました", "error")
     }
@@ -476,8 +488,10 @@ function NewDashboardContent() {
     if (!pendingPostAction || !user) return
     if (pendingPostAction.type === "post") {
       await doPost(pendingPostAction.post)
+      if (pendingPostAction.post.id.startsWith("format-")) setFormatDraft(null)
     } else {
       await doSchedule(pendingPostAction.post, pendingPostAction.scheduleDate)
+      if (pendingPostAction.post.id.startsWith("format-")) setFormatDraft(null)
     }
     setPendingPostAction(null)
   }
@@ -495,6 +509,75 @@ function NewDashboardContent() {
       d.id === postId ? { ...d, mediaUrl: imageUrl, mediaType: "image" as const } : d
     ))
   }, [])
+
+  // アイデア整形: ユーザーの文・アイデアをAIで整形
+  const handleFormatSubmit = async () => {
+    if (!formatInput.trim() || !user) return
+    setIsFormatting(true)
+    setFormatDraft(null)
+    try {
+      setCurrentTrend("")
+      setCurrentPurpose(formatPurpose)
+      const result = await improveTweetTextAction(
+        formatInput.trim(),
+        formatPurpose,
+        formatAiProvider,
+        { userId: user.id, runFactCheck: true }
+      )
+      if (result) {
+        const post: GeneratedPost = {
+          id: `format-${Date.now()}`,
+          content: result.improvedText,
+          naturalness_score: result.naturalnessScore,
+          fact_score: result.factScore ?? null,
+          fact_suggestions: result.factSuggestions,
+        }
+        setFormatDraft(post)
+        showToast("整形しました", "success")
+      } else {
+        showToast("整形に失敗しました", "error")
+      }
+    } catch (e) {
+      showToast("整形中にエラーが発生しました", "error")
+    } finally {
+      setIsFormatting(false)
+    }
+  }
+
+  // 整形結果の投稿・予約・下書き保存（formatDraft 用）
+  const handleFormatPost = (post: GeneratedPost) => {
+    const factScore = post.fact_score ?? 100
+    if (factScore < 70) {
+      setPendingPostAction({ type: "post", post })
+      return
+    }
+    doPost(post)
+    setFormatDraft(null)
+  }
+  const handleFormatSchedule = (post: GeneratedPost) => {
+    setSchedulingPost(post)
+    setScheduleDate("")
+  }
+  const handleFormatSaveDraft = async (post: GeneratedPost) => {
+    if (!user) return
+    const draft: PostDraft = {
+      text: post.content,
+      naturalnessScore: post.naturalness_score,
+      hashtags: [],
+    }
+    try {
+      await savePostToHistory(user.id, draft, "", formatPurpose, "draft", {
+        factScore: post.fact_score ?? undefined,
+      })
+      showToast("下書きを保存しました", "success")
+      setFormatDraft(null)
+    } catch {
+      showToast("保存中にエラーが発生しました", "error")
+    }
+  }
+  const handleFormatContentChange = (_id: string, newContent: string) => {
+    setFormatDraft(prev => prev ? { ...prev, content: newContent } : null)
+  }
 
   // Post a scheduled tweet now (semi-auto: user clicks "投稿する")
   const handlePostScheduled = async (postId: string) => {
@@ -859,6 +942,106 @@ function NewDashboardContent() {
                         </CardContent>
                       </Card>
                     ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* アイデア整形ビュー */}
+            {activeView === "format" && (
+              <>
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
+                      <PenLine className="h-5 w-5 text-white" />
+                    </div>
+                    <span className="bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">アイデア整形</span>
+                  </h1>
+                  <p className="text-muted-foreground mt-2 text-sm md:text-base">
+                    思いついた文やアイデアを入力すると、X向けに整形します
+                  </p>
+                </div>
+
+                <Card className="glass-card border-0 overflow-hidden">
+                  <CardContent className="p-6 space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="format-input" className="text-sm font-medium">投稿の下書き・アイデア</Label>
+                      <Textarea
+                        id="format-input"
+                        value={formatInput}
+                        onChange={(e) => setFormatInput(e.target.value)}
+                        placeholder="例：今日の学びをまとめたい、新商品の宣伝文を考えたい..."
+                        className="min-h-[120px] rounded-xl border-2 resize-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">目的（任意）</Label>
+                      <Select value={formatPurpose} onValueChange={setFormatPurpose}>
+                        <SelectTrigger className="h-11 rounded-xl border-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="engagement">エンゲージメント</SelectItem>
+                          <SelectItem value="community">コミュニティ向け</SelectItem>
+                          <SelectItem value="viral">バズ狙い</SelectItem>
+                          <SelectItem value="brand">ブランド発信</SelectItem>
+                          <SelectItem value="product">商品・サービス紹介</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant={formatAiProvider === "grok" ? "default" : "outline"}
+                        size="sm"
+                        className="rounded-xl"
+                        onClick={() => setFormatAiProvider("grok")}
+                      >
+                        <Zap className="h-4 w-4 mr-1.5" /> Grok
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={formatAiProvider === "claude" ? "default" : "outline"}
+                        size="sm"
+                        className="rounded-xl"
+                        onClick={() => setFormatAiProvider("claude")}
+                      >
+                        <Zap className="h-4 w-4 mr-1.5" /> Claude
+                      </Button>
+                    </div>
+                    <Button
+                      onClick={handleFormatSubmit}
+                      disabled={isFormatting || !formatInput.trim()}
+                      className="w-full rounded-xl h-11 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+                    >
+                      {isFormatting ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <PenLine className="h-4 w-4 mr-2" />
+                      )}
+                      整形する
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {formatDraft && (
+                  <div className="space-y-3">
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-violet-500" />
+                      整形結果
+                    </h2>
+                    <div className="max-w-lg">
+                      <PostGenerationCard
+                        post={formatDraft}
+                        index={0}
+                        onContentChange={handleFormatContentChange}
+                        onPost={() => handleFormatPost(formatDraft)}
+                        onSchedule={() => handleFormatSchedule(formatDraft)}
+                        onSaveDraft={() => handleFormatSaveDraft(formatDraft)}
+                        maxCharacters={isPro ? 280 : 140}
+                        isPosting={isPosting}
+                      />
+                    </div>
                   </div>
                 )}
               </>
