@@ -10,6 +10,7 @@ import {
   postSimpleRetweet, 
   scheduleRetweet, 
   canGenerateQuoteRT,
+  fetchExternalTweet,
   type InspirationPost, 
   type QuoteRTDraft 
 } from "@/app/actions-inspiration"
@@ -37,7 +38,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
-import { Quote, Sparkles, Loader2, Info, Crown } from "lucide-react"
+import { Quote, Sparkles, Loader2, Info, Crown, Link2, Search, ExternalLink } from "lucide-react"
 
 interface User {
   id: string
@@ -66,6 +67,10 @@ export default function InspirationPage() {
   // Free tier usage tracking
   const [generationsRemaining, setGenerationsRemaining] = useState<number>(3)
   const [generationsLimit, setGenerationsLimit] = useState<number>(3)
+  
+  // External tweet URL input
+  const [externalTweetUrl, setExternalTweetUrl] = useState("")
+  const [fetchingExternalTweet, setFetchingExternalTweet] = useState(false)
 
   const { isPro, startCheckout } = useSubscription(user?.id ?? null)
   const upgradeEnabled = process.env.NEXT_PUBLIC_UPGRADE_ENABLED !== "false"
@@ -135,6 +140,44 @@ export default function InspirationPage() {
       }
     } catch (e) {
       console.error("Failed to load Twitter accounts:", e)
+    }
+  }
+
+  // Handle fetching external tweet by URL
+  const handleFetchExternalTweet = async () => {
+    if (!user || !externalTweetUrl.trim()) {
+      showToast("ツイートのURLを入力してください", "error")
+      return
+    }
+    
+    // Get access token from selected account
+    if (!selectedAccountId) {
+      showToast("Twitterアカウントを選択してください", "error")
+      return
+    }
+    
+    const account = await getTwitterAccountById(selectedAccountId, user.id)
+    if (!account?.access_token) {
+      showToast("Twitterアカウントのアクセストークンが見つかりません", "error")
+      return
+    }
+    
+    setFetchingExternalTweet(true)
+    try {
+      const result = await fetchExternalTweet(user.id, externalTweetUrl.trim(), account.access_token)
+      if (result.success && result.tweet) {
+        // Open the tweet in the quote editor
+        setQuoteEditorPost(result.tweet)
+        setQuoteEditorDraft(null)
+        setExternalTweetUrl("")
+        showToast("ツイートを取得しました", "success")
+      } else {
+        showToast(result.error || "ツイートの取得に失敗しました", "error")
+      }
+    } catch (e) {
+      showToast("エラーが発生しました", "error")
+    } finally {
+      setFetchingExternalTweet(false)
     }
   }
 
@@ -319,6 +362,52 @@ export default function InspirationPage() {
       {!isPro && upgradeEnabled && (
         <ProCard config={{ spotsLeft: 5, spotsTotal: 5, currentPlan: "Free" }} onUpgrade={handleUpgrade} variant="compact" showAsUpgrade={true} />
       )}
+
+      {/* External Tweet URL Input - Main Feature */}
+      <Card className="rounded-2xl border-2 border-purple-500/30 shadow-lg bg-gradient-to-br from-purple-50/50 to-white dark:from-purple-950/30 dark:to-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Link2 className="h-5 w-5 text-purple-600" />
+            他人のツイートを引用RT
+          </CardTitle>
+          <CardDescription>
+            X（Twitter）のツイートURLを貼り付けて、引用RTを作成できます
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex gap-2">
+            <Input
+              placeholder="https://x.com/username/status/1234567890"
+              value={externalTweetUrl}
+              onChange={(e) => setExternalTweetUrl(e.target.value)}
+              className="rounded-xl flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !fetchingExternalTweet) {
+                  handleFetchExternalTweet()
+                }
+              }}
+            />
+            <Button
+              onClick={handleFetchExternalTweet}
+              disabled={fetchingExternalTweet || !externalTweetUrl.trim()}
+              className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-6"
+            >
+              {fetchingExternalTweet ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Search className="h-4 w-4 mr-2" />
+                  取得
+                </>
+              )}
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ExternalLink className="h-3 w-3" />
+            <span>対応形式: x.com/username/status/ID, twitter.com/username/status/ID</span>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="rounded-2xl border-0 shadow-lg bg-card/80 backdrop-blur-sm">
         <CardHeader className="pb-3">

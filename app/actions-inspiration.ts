@@ -33,9 +33,107 @@ export interface QuoteRTCandidate {
   generatedAt?: string
 }
 
+// External tweet fetched by URL
+export interface ExternalTweet {
+  id: string
+  tweet_id: string
+  text: string
+  author_name: string
+  author_handle: string
+  author_avatar_url?: string
+  like_count: number
+  retweet_count: number
+  reply_count: number
+  impression_count: number | null
+  created_at: string
+  source: "external"
+}
+
 // Free tier limits
 const FREE_TIER_DAILY_QUOTE_GENERATIONS = 3
 const FREE_TIER_DAILY_CANDIDATES_VIEW = 5
+
+/**
+ * Extract tweet ID from various X/Twitter URL formats
+ * Supports:
+ * - https://x.com/username/status/1234567890
+ * - https://twitter.com/username/status/1234567890
+ * - https://x.com/i/status/1234567890
+ * - https://mobile.twitter.com/username/status/1234567890
+ * - Just the ID: 1234567890
+ */
+export function extractTweetIdFromUrl(urlOrId: string): string | null {
+  const trimmed = urlOrId.trim()
+  
+  // If it's just a numeric ID
+  if (/^\d+$/.test(trimmed)) {
+    return trimmed
+  }
+  
+  // Try to parse as URL
+  try {
+    const url = new URL(trimmed)
+    // Match /status/ID or /statuses/ID patterns
+    const match = url.pathname.match(/\/status(?:es)?\/(\d+)/)
+    if (match) {
+      return match[1]
+    }
+  } catch {
+    // Not a valid URL, try regex directly
+    const match = trimmed.match(/\/status(?:es)?\/(\d+)/)
+    if (match) {
+      return match[1]
+    }
+  }
+  
+  return null
+}
+
+/**
+ * Fetch an external tweet by URL or ID
+ * Returns InspirationPost-compatible object for use with QuoteRTEditor
+ */
+export async function fetchExternalTweet(
+  userId: string,
+  urlOrId: string,
+  accessToken: string
+): Promise<{ success: boolean; tweet?: InspirationPost; error?: string }> {
+  try {
+    const tweetId = extractTweetIdFromUrl(urlOrId)
+    if (!tweetId) {
+      return { success: false, error: "無効なURLまたはツイートIDです。XのツイートURLを貼り付けてください。" }
+    }
+    
+    const { fetchTweetById } = await import("@/lib/x-post")
+    const fetched = await fetchTweetById(tweetId, accessToken)
+    
+    if (!fetched) {
+      return { success: false, error: "ツイートが見つかりませんでした。URLを確認してください。" }
+    }
+    
+    // Convert to InspirationPost format
+    const post: InspirationPost = {
+      id: `external-${fetched.id}`,
+      text: fetched.text,
+      tweet_id: fetched.id,
+      like_count: fetched.likeCount,
+      retweet_count: fetched.retweetCount,
+      reply_count: fetched.replyCount,
+      impression_count: fetched.impressionCount,
+      engagement_rate: null,
+      created_at: fetched.createdAt,
+      author_name: fetched.authorName,
+      author_handle: fetched.authorUsername,
+      source: "search", // Mark as external source
+    }
+    
+    return { success: true, tweet: post }
+  } catch (e) {
+    console.error("[fetchExternalTweet] Error:", e)
+    const errorMsg = e instanceof Error ? e.message : "ツイートの取得に失敗しました"
+    return { success: false, error: errorMsg }
+  }
+}
 
 const PROMOTION_NATURALNESS_PENALTY = 3
 

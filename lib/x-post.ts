@@ -396,6 +396,70 @@ export async function getTweetEngagement(
   }
 }
 
+// Fetch a single tweet by ID with full details (for quote RT)
+export interface FetchedTweet {
+  id: string
+  text: string
+  authorId: string
+  authorName: string
+  authorUsername: string
+  authorProfileImageUrl?: string
+  likeCount: number
+  retweetCount: number
+  replyCount: number
+  quoteCount: number
+  impressionCount: number | null
+  createdAt: string
+}
+
+export async function fetchTweetById(
+  tweetId: string,
+  accessToken: string
+): Promise<FetchedTweet | null> {
+  try {
+    const client = new TwitterApi(accessToken)
+    const rwClient = client.readWrite
+
+    // Fetch tweet with author expansion and metrics
+    const tweet = await rwClient.v2.singleTweet(tweetId, {
+      'tweet.fields': ['public_metrics', 'created_at', 'author_id'],
+      expansions: ['author_id'],
+      'user.fields': ['name', 'username', 'profile_image_url'],
+    })
+
+    if (!tweet.data) {
+      console.error('[fetchTweetById] Tweet not found:', tweetId)
+      return null
+    }
+
+    const author = tweet.includes?.users?.[0]
+    const metrics = tweet.data.public_metrics || {
+      like_count: 0,
+      retweet_count: 0,
+      reply_count: 0,
+      quote_count: 0,
+    }
+
+    return {
+      id: tweet.data.id,
+      text: tweet.data.text,
+      authorId: tweet.data.author_id || author?.id || '',
+      authorName: author?.name || '不明',
+      authorUsername: author?.username || '',
+      authorProfileImageUrl: author?.profile_image_url,
+      likeCount: metrics.like_count || 0,
+      retweetCount: metrics.retweet_count || 0,
+      replyCount: metrics.reply_count || 0,
+      quoteCount: metrics.quote_count || 0,
+      impressionCount: null, // Only available for own tweets
+      createdAt: tweet.data.created_at || new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error('[fetchTweetById] Error:', error)
+    return null
+  }
+}
+
 // Schedule tweet (store in database for later posting)
 export interface ScheduledTweet {
   text: string
