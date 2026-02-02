@@ -11,6 +11,8 @@
 | `Could not find the table 'public.user_subscriptions'` | テーブル未作成 | [2. user_subscriptions](#2-user_subscriptions-テーブル) |
 | `Could not find the table 'public.usage_tracking'` | テーブル未作成 | [3. usage_tracking](#3-usage_tracking-テーブル) |
 | `column post_history.scheduled_for does not exist` | カラム未追加 | [4. post_history.scheduled_for](#4-post_historyscheduled_for-カラム) |
+| 下書き保存できない / `context_used` or `fact_score` does not exist | カラム未追加 | [5. post_history の context_used / fact_score](#5-post_history-の-context_used--fact_score-カラム) |
+| 生成履歴が出てこない / `Could not find the table 'public.generation_history'` | テーブル未作成 | [6. generation_history テーブル](#6-generation_history-テーブル) |
 | 複数 Twitter アカウントが使えない | `user_id` の UNIQUE 制約 | [1. 複数アカウント](#1-複数twitterアカウント) |
 
 ---
@@ -159,7 +161,74 @@ END $$;
 
 ---
 
-## 5. （任意）サインアップ時のサブスクリプション初期化
+## 5. post_history の context_used / fact_score カラム
+
+**目的**: 下書き・投稿履歴に「コンテキスト利用」「事実確認スコア」を保存する（アナリティクス用）。  
+**解消するエラー**: 下書き保存時の `column ... does not exist`（context_used / fact_score がない場合）
+
+> 注: アプリはこれらのカラムがなくても下書き保存を試みますが、本マイグレーションを実行すると完全に保存されます。
+
+```sql
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'post_history' AND column_name = 'context_used'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN context_used BOOLEAN DEFAULT false;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'post_history' AND column_name = 'fact_score'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN fact_score INTEGER CHECK (fact_score IS NULL OR (fact_score >= 0 AND fact_score <= 100));
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'post_history' AND column_name = 'ab_test_id'
+  ) THEN
+    ALTER TABLE post_history ADD COLUMN ab_test_id UUID;
+  END IF;
+END $$;
+```
+
+---
+
+## 6. generation_history テーブル
+
+**目的**: 生成履歴（いつ・何を生成したか）を月別に表示する。  
+**解消するエラー**: `Could not find the table 'public.generation_history'` / 生成履歴が出てこない
+
+```sql
+CREATE TABLE IF NOT EXISTS generation_history (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  trend TEXT,
+  purpose TEXT,
+  draft_count INTEGER NOT NULL DEFAULT 0,
+  drafts JSONB NOT NULL DEFAULT '[]',
+  ai_provider TEXT CHECK (ai_provider IS NULL OR ai_provider IN ('grok', 'claude')),
+  context_used BOOLEAN DEFAULT false,
+  fact_used BOOLEAN DEFAULT false
+);
+
+ALTER TABLE generation_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own generation_history" ON generation_history;
+DROP POLICY IF EXISTS "Users can insert own generation_history" ON generation_history;
+DROP POLICY IF EXISTS "Users can delete own generation_history" ON generation_history;
+
+CREATE POLICY "Users can view own generation_history" ON generation_history FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own generation_history" ON generation_history FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete own generation_history" ON generation_history FOR DELETE USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS idx_generation_history_user_created ON generation_history(user_id, created_at DESC);
+```
+
+---
+
+## 7. （任意）サインアップ時のサブスクリプション初期化
 
 `user_subscriptions` を作成したあと、**新規ユーザー登録時に自動でトライアル行を 1 件作成**したい場合のみ実行してください。
 
@@ -187,6 +256,8 @@ CREATE TRIGGER on_auth_user_created_subscription
   - `user_subscriptions`
   - `usage_tracking`
   - `post_history` に `scheduled_for` カラムがあること
+  - （推奨）`context_used` / `fact_score` / `ab_test_id` があると下書き・投稿履歴が完全に保存されます（[5. post_history の context_used / fact_score](#5-post_history-の-context_used--fact_score-カラム)）
+  - `generation_history` テーブルがあると「生成履歴」が表示されます（[6. generation_history テーブル](#6-generation_history-テーブル)）
 - 再度 Vercel でアプリにアクセスし、ログに同じエラーが出ないことを確認する。
 
 ---

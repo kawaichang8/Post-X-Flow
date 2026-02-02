@@ -159,9 +159,8 @@ export async function savePostToHistory(
   options?: { abTestId?: string; contextUsed?: boolean; factScore?: number }
 ) {
   try {
-    // Use service role client to bypass RLS in Server Actions
     const supabaseAdmin = createServerClient()
-    const insertPayload: Record<string, unknown> = {
+    const basePayload: Record<string, unknown> = {
       user_id: userId,
       text: draft.text,
       hashtags: draft.hashtags,
@@ -170,28 +169,29 @@ export async function savePostToHistory(
       purpose: purpose,
       status: status,
     }
-    if (options?.abTestId) insertPayload.ab_test_id = options.abTestId
-    if (options?.contextUsed != null) insertPayload.context_used = options.contextUsed
-    if (options?.factScore != null) insertPayload.fact_score = options.factScore
-    const { data, error } = await supabaseAdmin.from("post_history").insert(insertPayload).select().single()
+    const fullPayload = { ...basePayload }
+    if (options?.abTestId) fullPayload.ab_test_id = options.abTestId
+    if (options?.contextUsed != null) fullPayload.context_used = options.contextUsed
+    if (options?.factScore != null) fullPayload.fact_score = options.factScore
 
-    if (error) {
-      const appError = classifyError(error)
+    let result = await supabaseAdmin.from("post_history").insert(fullPayload).select().single()
+
+    // If column missing (42703 = undefined_column), retry without optional columns so draft save works on older DBs
+    if (result.error && (result.error.code === '42703' || result.error.code === 42703 || result.error.message?.includes('does not exist'))) {
+      result = await supabaseAdmin.from("post_history").insert(basePayload).select().single()
+    }
+
+    if (result.error) {
+      const appError = classifyError(result.error)
       logErrorToSentry(appError, {
         action: 'savePostToHistory',
         userId,
         status,
       })
-      
-      // DB接続エラーの場合は、エラーをスローしてクライアント側でローカルストレージに保存
-      if (appError.type === ErrorType.DATABASE_ERROR) {
-        throw appError
-      }
-      
       throw appError
     }
 
-    return data
+    return result.data
   } catch (error: any) {
     const appError = (error?.type && error?.message) ? error as AppError : classifyError(error)
     logErrorToSentry(appError, {
@@ -2137,6 +2137,19 @@ export async function improveTweetTextAction(
       pastPostsContext,
       runFactCheck: options?.runFactCheck ?? true,
     })
+
+    // 宣伝設定ONなら整形後のテキスト末尾に誘導文を追加（投稿作成フローと同様）
+    if (options?.userId) {
+      const promo = await getPromotionSettingsForGeneration(options.userId)
+      if (promo?.enabled && promo?.link_url?.trim()) {
+        const suffix = promo.template.replace(/\[link\]/g, promo.link_url).trim()
+        return {
+          ...result,
+          improvedText: `${result.improvedText}\n\n${suffix}`,
+          naturalnessScore: Math.max(0, (result.naturalnessScore ?? 0) - PROMOTION_NATURALNESS_PENALTY),
+        }
+      }
+    }
 
     return result
   } catch (error) {

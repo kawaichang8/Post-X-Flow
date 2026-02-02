@@ -52,6 +52,17 @@ export async function savePromotionSettings(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = createServerClient()
+    const { data: sub, error: subError } = await supabase
+      .from("user_subscriptions")
+      .select("plan")
+      .eq("user_id", userId)
+      .maybeSingle()
+    if (!subError && sub) {
+      const isPro = sub.plan === "pro" || sub.plan === "premium"
+      if (!isPro) {
+        return { success: false, error: "宣伝設定はProプランでご利用いただけます。アップグレード後に保存してください。" }
+      }
+    }
     const template = (settings.template || DEFAULT_TEMPLATE).trim() || DEFAULT_TEMPLATE
 
     const { error } = await supabase
@@ -70,12 +81,19 @@ export async function savePromotionSettings(
 
     if (error) {
       console.error("Error saving promotion settings:", error)
-      return { success: false, error: error.message }
+      if (error.code === "PGRST205") {
+        return { success: false, error: "宣伝設定用のテーブルがありません。管理者に連絡するか、MIGRATION_GUIDE のマイグレーションを実行してください。" }
+      }
+      if (error.code === "42501" || error.message?.includes("policy") || error.message?.includes("row-level")) {
+        return { success: false, error: "権限がありません。ログインし直すか、Proプランでご利用ください。" }
+      }
+      return { success: false, error: error.message || "保存に失敗しました" }
     }
     return { success: true }
   } catch (e) {
     console.error("savePromotionSettings:", e)
-    return { success: false, error: "保存に失敗しました" }
+    const msg = e instanceof Error ? e.message : "保存に失敗しました"
+    return { success: false, error: msg }
   }
 }
 

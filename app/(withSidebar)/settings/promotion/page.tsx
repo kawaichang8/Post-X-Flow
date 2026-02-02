@@ -183,13 +183,17 @@ export default function PromotionSettingsPage() {
             <Label htmlFor="link-url">アフィリエイト・リンクURL</Label>
             <Input
               id="link-url"
-              type="url"
-              placeholder="https://..."
+              type="text"
+              inputMode="url"
+              placeholder="https://... または App Store / 商品ページのURL"
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
               disabled={!isPro}
               className="rounded-xl"
             />
+            <p className="text-xs text-muted-foreground">
+              任意のURLを入力できます（https・アプリストアリンクなど）
+            </p>
           </div>
 
           <div className="space-y-2">

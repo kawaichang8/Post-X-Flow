@@ -178,7 +178,7 @@ export function ObsidianExport({ userId, currentDrafts, className }: ObsidianExp
     // Generation history
     if (includeHistory) {
       try {
-        const genHistory = await getGenerationHistory(userId, { limit: 20 })
+        const { data: genHistory } = await getGenerationHistory(userId, { limit: 20 })
         if (genHistory.length > 0) {
           data.generationHistory = genHistory.map((item: GenerationHistoryItem) => ({
             trend: item.trend || "",

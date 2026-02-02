@@ -123,6 +123,11 @@ function NewDashboardContent() {
   
   // View state
   const [activeView, setActiveView] = useState("create")
+
+  // Generate form toggles (lifted so they persist when switching sections)
+  const [contextMode, setContextMode] = useState(true)
+  const [factCheck, setFactCheck] = useState(true)
+  const [abMode, setAbMode] = useState(false)
   
   // History and scheduled
   const [postHistory, setPostHistory] = useState<PostHistoryItem[]>([])
@@ -131,6 +136,7 @@ function NewDashboardContent() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [generationHistoryList, setGenerationHistoryList] = useState<GenerationHistoryItem[]>([])
   const [loadingGenerationHistory, setLoadingGenerationHistory] = useState(false)
+  const [generationHistoryError, setGenerationHistoryError] = useState<string | null>(null)
 
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -227,12 +233,19 @@ function NewDashboardContent() {
   const loadGenerationHistory = useCallback(async () => {
     if (!user) return
     setLoadingGenerationHistory(true)
+    setGenerationHistoryError(null)
     try {
-      const data = await getGenerationHistory(user.id, { limit: 300 })
-      setGenerationHistoryList(data)
+      const res = await getGenerationHistory(user.id, { limit: 300 })
+      setGenerationHistoryList(res.data ?? [])
+      if (res.error) {
+        setGenerationHistoryError(res.error)
+        showToast(res.error, "error")
+      }
     } catch (e) {
       console.error("Failed to load generation history:", e)
-      showToast("生成履歴の取得に失敗しました", "error")
+      const msg = e instanceof Error ? e.message : "生成履歴の取得に失敗しました"
+      setGenerationHistoryError(msg)
+      showToast(msg, "error")
     } finally {
       setLoadingGenerationHistory(false)
     }
@@ -481,8 +494,9 @@ function NewDashboardContent() {
         factScore: post.fact_score ?? undefined,
       })
       showToast("下書きを保存しました", "success")
-    } catch (error) {
-      showToast("保存中にエラーが発生しました", "error")
+    } catch (error: unknown) {
+      const msg = error && typeof error === "object" && "message" in error ? String((error as { message: string }).message) : "保存中にエラーが発生しました"
+      showToast(msg.length > 80 ? "保存に失敗しました。データベースのマイグレーション（MIGRATION_GUIDE.md）を確認してください。" : msg, "error")
     }
   }
 
@@ -574,8 +588,9 @@ function NewDashboardContent() {
       })
       showToast("下書きを保存しました", "success")
       setFormatDraft(null)
-    } catch {
-      showToast("保存中にエラーが発生しました", "error")
+    } catch (error: unknown) {
+      const msg = error && typeof error === "object" && "message" in error ? String((error as { message: string }).message) : "保存中にエラーが発生しました"
+      showToast(msg.length > 80 ? "保存に失敗しました。データベースのマイグレーション（MIGRATION_GUIDE.md）を確認してください。" : msg, "error")
     }
   }
   const handleFormatContentChange = (_id: string, newContent: string) => {
@@ -844,6 +859,12 @@ function NewDashboardContent() {
                       selectedAccountId={selectedAccountId}
                       onTrendsError={(msg) => showToast(msg, "error")}
                       isPro={isPro}
+                      contextMode={contextMode}
+                      onContextModeChange={setContextMode}
+                      factCheck={factCheck}
+                      onFactCheckChange={setFactCheck}
+                      abMode={abMode}
+                      onAbModeChange={setAbMode}
                     />
                   </CardContent>
                 </Card>
@@ -1249,9 +1270,21 @@ function NewDashboardContent() {
                   {!loadingGenerationHistory && generationHistoryList.length === 0 && (
                     <div className="text-center py-12">
                       <History className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-                      <p className="text-muted-foreground">
-                        生成履歴がありません。ツイートを生成するとここに残ります。
-                      </p>
+                      {generationHistoryError ? (
+                        <>
+                          <p className="text-destructive font-medium mb-2">取得に失敗しました</p>
+                          <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                            {generationHistoryError}
+                          </p>
+                          <p className="text-muted-foreground text-xs mt-4">
+                            MIGRATION_GUIDE.md の「生成履歴テーブル」を Supabase SQL Editor で実行すると表示されます。
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-muted-foreground">
+                          生成履歴がありません。ツイートを生成するとここに残ります。
+                        </p>
+                      )}
                     </div>
                   )}
                   {!loadingGenerationHistory && generationHistoryList.length > 0 && (() => {

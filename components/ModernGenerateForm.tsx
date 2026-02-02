@@ -45,6 +45,15 @@ interface ModernGenerateFormProps {
   onTrendsError?: (message: string) => void
   /** Pro: show AB Mode toggle for 2–3 variations comparison */
   isPro?: boolean
+  /** Controlled: コンテキストを考慮 (persists across section switches when provided by parent) */
+  contextMode?: boolean
+  onContextModeChange?: (checked: boolean) => void
+  /** Controlled: 事実確認 */
+  factCheck?: boolean
+  onFactCheckChange?: (checked: boolean) => void
+  /** Controlled: A/B Mode */
+  abMode?: boolean
+  onAbModeChange?: (checked: boolean) => void
 }
 
 const purposes = [
@@ -67,16 +76,30 @@ export function ModernGenerateForm({
   selectedAccountId,
   onTrendsError,
   isPro = false,
+  contextMode: contextModeProp,
+  onContextModeChange: onContextModeChangeProp,
+  factCheck: factCheckProp,
+  onFactCheckChange: onFactCheckChangeProp,
+  abMode: abModeProp,
+  onAbModeChange: onAbModeChangeProp,
 }: ModernGenerateFormProps) {
   const [trend, setTrend] = useState("")
   const [purpose, setPurpose] = useState("engagement")
   const [aiProvider, setAiProvider] = useState("grok")
-  const [abMode, setAbMode] = useState(false)
-  const [contextMode, setContextMode] = useState(true)
-  const [factCheck, setFactCheck] = useState(true)
+  const [abModeInternal, setAbModeInternal] = useState(false)
+  const [contextModeInternal, setContextModeInternal] = useState(true)
+  const [factCheckInternal, setFactCheckInternal] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [trends, setTrends] = useState<TrendItem[]>([])
   const [isLoadingTrends, setIsLoadingTrends] = useState(false)
+
+  // Use controlled props when provided (persists across section switches); otherwise internal state
+  const contextMode = onContextModeChangeProp ? (contextModeProp ?? true) : contextModeInternal
+  const setContextMode = onContextModeChangeProp ?? setContextModeInternal
+  const factCheck = onFactCheckChangeProp ? (factCheckProp ?? true) : factCheckInternal
+  const setFactCheck = onFactCheckChangeProp ?? setFactCheckInternal
+  const abMode = onAbModeChangeProp ? (abModeProp ?? false) : abModeInternal
+  const setAbMode = onAbModeChangeProp ?? setAbModeInternal
 
   const loadTrends = useCallback(async () => {
     if (!userId) return

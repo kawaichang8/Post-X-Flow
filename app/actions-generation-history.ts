@@ -89,11 +89,12 @@ export async function saveGenerationHistory(
 /**
  * Get generation history for user (monthly grouping is done on client)
  * Optional: olderThanMonths to only return recent (e.g. 6 = last 6 months)
+ * Returns { data, error } so the UI can show "table missing" vs "no items".
  */
 export async function getGenerationHistory(
   userId: string,
   options?: { limit?: number; olderThanMonths?: number }
-): Promise<GenerationHistoryItem[]> {
+): Promise<{ data: GenerationHistoryItem[]; error?: string }> {
   try {
     const supabase = createServerClient()
     let query = supabase
@@ -110,9 +111,12 @@ export async function getGenerationHistory(
     const { data, error } = await query
     if (error) {
       console.error("getGenerationHistory error:", error)
-      return []
+      const msg = error.code === "PGRST205"
+        ? "generation_history テーブルがありません。MIGRATION_GUIDE の「生成履歴テーブル」を実行してください。"
+        : error.message || "生成履歴の取得に失敗しました"
+      return { data: [], error: msg }
     }
-    return (data || []).map((row: Record<string, unknown>) => ({
+    const items = (data || []).map((row: Record<string, unknown>) => ({
       id: row.id as string,
       user_id: row.user_id as string,
       created_at: row.created_at as string,
@@ -124,9 +128,11 @@ export async function getGenerationHistory(
       context_used: (row.context_used as boolean) ?? false,
       fact_used: (row.fact_used as boolean) ?? false,
     }))
+    return { data: items }
   } catch (e) {
     console.error("getGenerationHistory error:", e)
-    return []
+    const msg = e instanceof Error ? e.message : "生成履歴の取得に失敗しました"
+    return { data: [], error: msg }
   }
 }
 
