@@ -24,7 +24,9 @@ interface InspirationListProps {
   onRefresh: () => void
   onAutoRetweet: (post: InspirationPost) => void
   onGenerateQuote?: (post: InspirationPost) => void
+  onGenerateReply?: (post: InspirationPost) => void
   generatingForId?: string | null
+  generatingReplyForId?: string | null
   className?: string
 }
 
@@ -35,7 +37,9 @@ export function InspirationList({
   onRefresh,
   onAutoRetweet,
   onGenerateQuote,
+  onGenerateReply,
   generatingForId = null,
+  generatingReplyForId = null,
   className,
 }: InspirationListProps) {
   if (loading) {
@@ -137,7 +141,7 @@ export function InspirationList({
                 {onGenerateQuote && (
                   <Button
                     onClick={() => onGenerateQuote(post)}
-                    disabled={generatingForId === post.id || !isPro}
+                    disabled={generatingForId === post.id}
                     variant="outline"
                     className="flex-1 rounded-xl border-purple-500/50 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10"
                   >
@@ -146,15 +150,30 @@ export function InspirationList({
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         生成中...
                       </>
-                    ) : !isPro ? (
+                    ) : (
                       <>
-                        <Lock className="h-4 w-4 mr-2" />
-                        Pro限定
+                        <Quote className="h-4 w-4 mr-2" />
+                        引用RT
+                      </>
+                    )}
+                  </Button>
+                )}
+                {onGenerateReply && (
+                  <Button
+                    onClick={() => onGenerateReply(post)}
+                    disabled={generatingReplyForId === post.id}
+                    variant="outline"
+                    className="flex-1 rounded-xl border-blue-500/50 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+                  >
+                    {generatingReplyForId === post.id ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        生成中...
                       </>
                     ) : (
                       <>
-                        <Sparkles className="h-4 w-4 mr-2" />
-                        引用RTを生成
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        リプライ
                       </>
                     )}
                   </Button>

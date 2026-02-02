@@ -50,18 +50,21 @@ import {
   CheckCircle,
   Image as ImageIcon,
 } from "lucide-react"
-import type { InspirationPost, QuoteRTDraft } from "@/app/actions-inspiration"
+import type { InspirationPost, QuoteRTDraft, ReplyDraft } from "@/app/actions-inspiration"
+
+type EngagementMode = "quote" | "reply"
 
 interface QuoteRTEditorProps {
   isOpen: boolean
   onClose: () => void
   post: InspirationPost | null
-  draft: QuoteRTDraft | null
+  draft: QuoteRTDraft | ReplyDraft | null
   isGenerating: boolean
   onGenerate: (context?: string) => void
   onRegenerate: () => void
   onPost: (comment: string) => Promise<{ success: boolean; error?: string }>
   onSchedule: (comment: string, scheduledFor: Date) => Promise<{ success: boolean; error?: string }>
+  mode?: EngagementMode // "quote" (default) or "reply"
 }
 
 export function QuoteRTEditor({
@@ -74,7 +77,46 @@ export function QuoteRTEditor({
   onRegenerate,
   onPost,
   onSchedule,
+  mode = "quote",
 }: QuoteRTEditorProps) {
+  const isReply = mode === "reply"
+  
+  // Mode-specific text
+  const modeConfig = {
+    quote: {
+      title: "引用RTエディター",
+      description: "AIが生成したコメントを編集してから投稿できます",
+      icon: Quote,
+      commentLabel: "あなたのコメント",
+      placeholder: "コメントを入力...",
+      previewLabel: "プレビュー",
+      previewPrefix: "📌",
+      generateButton: "AIでコメントを生成",
+      confirmTitle: "引用RTを投稿しますか？",
+      confirmScheduleTitle: "引用RTを予約しますか？",
+      confirmText: "この投稿は即座にXに公開されます。",
+      gradientFrom: "from-purple-400",
+      gradientTo: "to-pink-500",
+    },
+    reply: {
+      title: "リプライエディター",
+      description: "AIが生成した返信を編集してから投稿できます",
+      icon: MessageCircle,
+      commentLabel: "あなたの返信",
+      placeholder: "返信を入力...",
+      previewLabel: "返信プレビュー",
+      previewPrefix: "↩️",
+      generateButton: "AIで返信を生成",
+      confirmTitle: "リプライを投稿しますか？",
+      confirmScheduleTitle: "リプライを予約しますか？",
+      confirmText: "この返信は即座にXに公開されます。",
+      gradientFrom: "from-blue-400",
+      gradientTo: "to-cyan-500",
+    },
+  }
+  
+  const config = modeConfig[mode]
+  const ModeIcon = config.icon
   const [comment, setComment] = useState("")
   const [userContext, setUserContext] = useState("")
   const [showSchedule, setShowSchedule] = useState(false)
@@ -88,8 +130,10 @@ export function QuoteRTEditor({
 
   // Update comment when draft changes
   useEffect(() => {
-    if (draft?.generatedComment) {
-      setComment(draft.generatedComment)
+    if (draft) {
+      // Handle both QuoteRTDraft (generatedComment) and ReplyDraft (generatedReply)
+      const text = "generatedComment" in draft ? draft.generatedComment : "generatedReply" in draft ? draft.generatedReply : ""
+      setComment(text)
     }
   }, [draft])
 
@@ -152,13 +196,13 @@ export function QuoteRTEditor({
         <DialogContent className="max-w-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center">
-                <Quote className="h-4 w-4 text-white" />
+              <div className={cn("w-8 h-8 rounded-xl bg-gradient-to-br flex items-center justify-center", config.gradientFrom, config.gradientTo)}>
+                <ModeIcon className="h-4 w-4 text-white" />
               </div>
-              引用RTエディター
+              {config.title}
             </DialogTitle>
             <DialogDescription>
-              AIが生成したコメントを編集してから投稿できます
+              {config.description}
             </DialogDescription>
           </DialogHeader>
 
@@ -237,7 +281,11 @@ export function QuoteRTEditor({
                   <Button
                     onClick={handleGenerate}
                     disabled={isGenerating}
-                    className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+                    className={cn("w-full rounded-xl bg-gradient-to-r text-white", 
+                      isReply 
+                        ? "from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600" 
+                        : "from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                    )}
                   >
                     {isGenerating ? (
                       <>
@@ -247,7 +295,7 @@ export function QuoteRTEditor({
                     ) : (
                       <>
                         <Sparkles className="h-4 w-4 mr-2" />
-                        AIでコメントを生成
+                        {config.generateButton}
                       </>
                     )}
                   </Button>
@@ -261,7 +309,7 @@ export function QuoteRTEditor({
                 {/* Comment Textarea */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">あなたのコメント</Label>
+                    <Label className="text-sm font-medium">{config.commentLabel}</Label>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -285,9 +333,9 @@ export function QuoteRTEditor({
                   <Textarea
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
-                    rows={4}
+                    rows={isReply ? 3 : 4}
                     className="rounded-xl resize-none"
-                    placeholder="コメントを入力..."
+                    placeholder={config.placeholder}
                   />
                   <div className="flex items-center justify-between text-xs">
                     <Badge
@@ -343,13 +391,30 @@ export function QuoteRTEditor({
 
                 {/* Preview */}
                 <div className="rounded-xl border bg-accent/30 p-4 space-y-2">
-                  <p className="text-xs text-muted-foreground font-medium">プレビュー</p>
-                  <p className="text-sm whitespace-pre-wrap">{comment || "（コメントなし）"}</p>
-                  <div className="p-3 rounded-lg border bg-card/50 mt-2">
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      📌 {post.text}
-                    </p>
-                  </div>
+                  <p className="text-xs text-muted-foreground font-medium">{config.previewLabel}</p>
+                  {isReply ? (
+                    // Reply preview: show reply target first, then your reply
+                    <>
+                      <div className="p-3 rounded-lg border bg-card/50">
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {config.previewPrefix} {post.text}
+                        </p>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap pl-4 border-l-2 border-blue-400">
+                        {comment || "（返信なし）"}
+                      </p>
+                    </>
+                  ) : (
+                    // Quote RT preview: your comment first, then quoted tweet
+                    <>
+                      <p className="text-sm whitespace-pre-wrap">{comment || "（コメントなし）"}</p>
+                      <div className="p-3 rounded-lg border bg-card/50 mt-2">
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {config.previewPrefix} {post.text}
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Schedule Toggle */}
@@ -359,7 +424,9 @@ export function QuoteRTEditor({
                     size="sm"
                     className={cn(
                       "rounded-xl flex-1",
-                      !showSchedule && "bg-gradient-to-r from-purple-500 to-pink-500"
+                      !showSchedule && (isReply 
+                        ? "bg-gradient-to-r from-blue-500 to-cyan-500" 
+                        : "bg-gradient-to-r from-purple-500 to-pink-500")
                     )}
                     onClick={() => setShowSchedule(false)}
                   >
@@ -371,7 +438,9 @@ export function QuoteRTEditor({
                     size="sm"
                     className={cn(
                       "rounded-xl flex-1",
-                      showSchedule && "bg-gradient-to-r from-purple-500 to-pink-500"
+                      showSchedule && (isReply 
+                        ? "bg-gradient-to-r from-blue-500 to-cyan-500" 
+                        : "bg-gradient-to-r from-purple-500 to-pink-500")
                     )}
                     onClick={() => setShowSchedule(true)}
                   >
@@ -407,7 +476,11 @@ export function QuoteRTEditor({
                   setShowConfirm(true)
                 }}
                 disabled={isOverLimit || (showSchedule && !isValidSchedule)}
-                className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+                className={cn("rounded-xl bg-gradient-to-r text-white",
+                  isReply 
+                    ? "from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+                    : "from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                )}
               >
                 {showSchedule ? (
                   <>
@@ -431,12 +504,12 @@ export function QuoteRTEditor({
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmAction === "post" ? "引用RTを投稿しますか？" : "引用RTを予約しますか？"}
+              {confirmAction === "post" ? config.confirmTitle : config.confirmScheduleTitle}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAction === "post"
-                ? "この投稿は即座にXに公開されます。"
-                : `この投稿は ${new Date(scheduleDate).toLocaleString("ja-JP")} に自動投稿されます。`}
+                ? config.confirmText
+                : `この${isReply ? "返信" : "投稿"}は ${new Date(scheduleDate).toLocaleString("ja-JP")} に自動投稿されます。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -444,7 +517,11 @@ export function QuoteRTEditor({
             <AlertDialogAction
               onClick={handlePost}
               disabled={isPosting}
-              className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+              className={cn("rounded-xl bg-gradient-to-r",
+                isReply 
+                  ? "from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+                  : "from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+              )}
             >
               {isPosting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

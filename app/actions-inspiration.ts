@@ -355,11 +355,25 @@ export async function generateQuoteRTDraft(
 
 【元ツイート】
 ${originalPost.text}
+${originalPost.author_handle ? `（投稿者: @${originalPost.author_handle}）` : ""}
+
+【重要：プロフィール訪問率10倍を狙うコメントの条件】
+しょうもない反応（「これ面白いです！」「参考になります」等）は絶対NG。
+以下のいずれかの"読む価値のある中身"を必ず含めること：
+
+1. **追加の視点** - 元ツイートにない別角度からの見方
+   例：「〇〇の観点から見ると…」「△△業界だと逆に…」
+
+2. **具体例** - 自分の経験や知っている事例
+   例：「実際に□□でも同じことが…」「先日〇〇で体験したけど…」
+
+3. **一段深いインサイト** - 本質を突く要約や気づき
+   例：「これって要するに『□□』ってこと」「裏を返せば〇〇ということ」
 
 【要件】
-- 元ツイートの内容に対する自分の意見・感想・補足を50〜100文字程度で
+- 50〜120文字程度（短すぎず、読み応えあり）
 - 自然で人間らしいトーン（押し売り感ゼロ）
-- 共感、学び、質問、補足情報のいずれかのアプローチ
+- 元投稿者や読者が「おっ」と思う内容
 ${userContext ? `- ユーザーの追加コンテキスト: ${userContext}` : ""}
 
 【出力形式】
@@ -629,5 +643,250 @@ export async function postQuoteRT(
   } catch (e: any) {
     console.error("postQuoteRT error:", e)
     return { success: false, error: e.message || "引用RTの投稿に失敗しました" }
+  }
+}
+
+// ============================================
+// REPLY FUNCTIONS
+// ============================================
+
+export interface ReplyDraft {
+  id: string
+  originalPost: InspirationPost
+  generatedReply: string
+  naturalnessScore: number
+}
+
+// Generate AI reply (shorter, more conversational than quote RT)
+export async function generateReplyDraft(
+  userId: string,
+  originalPost: InspirationPost,
+  userContext?: string,
+  isPro = false
+): Promise<ReplyDraft | null> {
+  try {
+    // Check free tier limits (shares limit with quote RT)
+    if (!isPro) {
+      const { allowed, remaining } = await canGenerateQuoteRT(userId, false)
+      if (!allowed) {
+        console.warn(`[generateReplyDraft] Free tier limit reached for user ${userId}. Remaining: ${remaining}`)
+        return null
+      }
+    }
+    
+    const { getGrokApiKey, getAnthropicApiKey } = await import("@/lib/server-only")
+    
+    let apiKey: string | null = null
+    let useGrok = true
+    
+    try {
+      apiKey = getGrokApiKey()
+    } catch {
+      try {
+        apiKey = getAnthropicApiKey()
+        useGrok = false
+      } catch {
+        console.error("No AI API key available")
+        return null
+      }
+    }
+
+    const prompt = `以下のツイートに対して、リプライ（返信）を生成してください。
+
+【元ツイート】
+${originalPost.text}
+${originalPost.author_handle ? `（投稿者: @${originalPost.author_handle}）` : ""}
+
+【重要：プロフィール訪問率を上げるリプライの条件】
+しょうもない反応（「いいですね！」「同感です」等）は絶対NG。
+以下のいずれかを含めること：
+
+1. **追加の視点・情報** - 相手が知らなそうな関連情報
+   例：「ちなみに〇〇では△△らしいですよ」
+
+2. **具体的な質問** - 会話が発展する質問
+   例：「これって□□の場合はどうなりますか？」
+
+3. **自分の体験・事例** - 共感を示しつつ価値を追加
+   例：「先日〇〇で同じ経験しました。△△がポイントでした」
+
+【要件】
+- 30〜80文字程度（リプライは短めが効果的）
+- 会話調で自然なトーン
+- 相手への敬意を忘れずに
+${userContext ? `- ユーザーの追加コンテキスト: ${userContext}` : ""}
+
+【出力形式】
+リプライテキストのみ（@メンション不要、ハッシュタグ不要）`
+
+    let generatedReply = ""
+
+    if (useGrok) {
+      const response = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "grok-3-latest",
+          messages: [
+            { role: "system", content: "あなたは日本語のソーシャルメディア専門家です。自然で会話的なリプライを生成します。短く、価値のある返信を心がけてください。" },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.8,
+          max_tokens: 150,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Grok API error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      generatedReply = data.choices?.[0]?.message?.content?.trim() || ""
+    } else {
+      const Anthropic = (await import("@anthropic-ai/sdk")).default
+      const anthropic = new Anthropic({ apiKey })
+      
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 150,
+        messages: [{ role: "user", content: prompt }],
+      })
+
+      generatedReply = (message.content[0] as { text: string })?.text?.trim() || ""
+    }
+
+    if (!generatedReply) {
+      return null
+    }
+    
+    // Increment usage count for free tier
+    if (!isPro) {
+      await incrementQuoteRTGenerationCount(userId)
+    }
+
+    // Estimate naturalness score
+    const naturalnessScore = Math.min(95, Math.max(60, 
+      80 + 
+      (generatedReply.length > 20 && generatedReply.length < 100 ? 10 : 0) +
+      (generatedReply.includes("？") ? 5 : 0) +
+      Math.floor(Math.random() * 10) - 5
+    ))
+
+    return {
+      id: `reply-${Date.now()}`,
+      originalPost,
+      generatedReply,
+      naturalnessScore,
+    }
+  } catch (e) {
+    console.error("generateReplyDraft error:", e)
+    return null
+  }
+}
+
+// Post reply immediately
+export async function postReply(
+  userId: string,
+  text: string,
+  replyToTweetId: string,
+  accessToken: string,
+  twitterAccountId?: string
+): Promise<{ success: boolean; tweetId?: string; error?: string }> {
+  try {
+    const { postTweet, refreshTwitterAccessToken } = await import("@/lib/x-post")
+    const supabase = createServerClient()
+
+    let currentAccessToken = accessToken
+    let tweet
+
+    try {
+      tweet = await postTweet(text, currentAccessToken, { replyToTweetId })
+    } catch (error: any) {
+      if (error?.code === 401) {
+        const { data: tokenData } = await supabase
+          .from("user_twitter_tokens")
+          .select("refresh_token")
+          .eq("user_id", userId)
+          .single()
+
+        if (!tokenData?.refresh_token) {
+          return { success: false, error: "Twitter認証エラー。再連携してください。" }
+        }
+
+        const { accessToken: newToken, refreshToken: newRefresh } = await refreshTwitterAccessToken(tokenData.refresh_token)
+
+        await supabase
+          .from("user_twitter_tokens")
+          .update({ access_token: newToken, refresh_token: newRefresh, updated_at: new Date().toISOString() })
+          .eq("user_id", userId)
+
+        currentAccessToken = newToken
+        tweet = await postTweet(text, currentAccessToken, { replyToTweetId })
+      } else {
+        throw error
+      }
+    }
+
+    // Save to history
+    await supabase.from("post_history").insert({
+      user_id: userId,
+      text,
+      status: "posted",
+      tweet_id: tweet.id,
+      twitter_account_id: twitterAccountId || null,
+      original_tweet_id: replyToTweetId,
+      retweet_type: null, // reply, not retweet
+    })
+
+    return { success: true, tweetId: tweet.id }
+  } catch (e: any) {
+    console.error("postReply error:", e)
+    return { success: false, error: e.message || "リプライの投稿に失敗しました" }
+  }
+}
+
+// Schedule reply
+export async function scheduleReply(
+  userId: string,
+  replyToTweetId: string,
+  text: string,
+  scheduledFor: Date,
+  twitterAccountId?: string
+): Promise<{ success: boolean; postHistoryId?: string; error?: string }> {
+  try {
+    const supabase = createServerClient()
+    
+    const { data: row, error } = await supabase
+      .from("post_history")
+      .insert({
+        user_id: userId,
+        text,
+        hashtags: [],
+        naturalness_score: null,
+        trend: null,
+        purpose: "reply",
+        status: "scheduled",
+        scheduled_for: scheduledFor.toISOString(),
+        original_tweet_id: replyToTweetId,
+        retweet_type: null, // reply
+        twitter_account_id: twitterAccountId || null,
+      })
+      .select("id")
+      .single()
+
+    if (error) {
+      console.error("scheduleReply insert error:", error)
+      return { success: false, error: "リプライの予約に失敗しました。" }
+    }
+    return { success: true, postHistoryId: row.id }
+  } catch (e) {
+    console.error("scheduleReply error:", e)
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "リプライの予約に失敗しました。",
+    }
   }
 }

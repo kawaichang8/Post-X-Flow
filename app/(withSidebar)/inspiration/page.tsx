@@ -6,13 +6,17 @@ import { supabase } from "@/lib/supabase"
 import { 
   getInspirationPosts, 
   generateQuoteRTDraft, 
+  generateReplyDraft,
   postQuoteRT, 
+  postReply,
   postSimpleRetweet, 
   scheduleRetweet, 
+  scheduleReply,
   canGenerateQuoteRT,
   fetchExternalTweet,
   type InspirationPost, 
-  type QuoteRTDraft 
+  type QuoteRTDraft,
+  type ReplyDraft,
 } from "@/app/actions-inspiration"
 import { getTwitterAccounts, getDefaultTwitterAccount, getTwitterAccountById, TwitterAccount } from "@/app/actions"
 import { useSubscription } from "@/hooks/useSubscription"
@@ -59,10 +63,16 @@ export default function InspirationPage() {
   const [userContext, setUserContext] = useState("")
   const [retweetModalPost, setRetweetModalPost] = useState<InspirationPost | null>(null)
   
-  // New: Quote RT Editor state
+  // Quote RT Editor state
   const [quoteEditorPost, setQuoteEditorPost] = useState<InspirationPost | null>(null)
   const [quoteEditorDraft, setQuoteEditorDraft] = useState<QuoteRTDraft | null>(null)
   const [isQuoteEditorGenerating, setIsQuoteEditorGenerating] = useState(false)
+  
+  // Reply Editor state
+  const [replyEditorPost, setReplyEditorPost] = useState<InspirationPost | null>(null)
+  const [replyEditorDraft, setReplyEditorDraft] = useState<ReplyDraft | null>(null)
+  const [isReplyEditorGenerating, setIsReplyEditorGenerating] = useState(false)
+  const [generatingReplyFor, setGeneratingReplyFor] = useState<string | null>(null)
   
   // Free tier usage tracking
   const [generationsRemaining, setGenerationsRemaining] = useState<number>(3)
@@ -257,6 +267,90 @@ export default function InspirationPage() {
     return result
   }
 
+  // ============================================
+  // REPLY HANDLERS
+  // ============================================
+  
+  const handleGenerateReply = async (post: InspirationPost) => {
+    // Check free tier limits
+    if (!isPro && generationsRemaining <= 0) {
+      showToast("本日のAI生成回数の上限に達しました。Proにアップグレードすると無制限に利用できます。", "error")
+      return
+    }
+    
+    // Open the reply editor modal
+    setReplyEditorPost(post)
+    setReplyEditorDraft(null)
+    setGeneratingReplyFor(post.id)
+  }
+  
+  // Handle AI generation in Reply Editor
+  const handleReplyEditorGenerate = async (context?: string) => {
+    if (!user || !replyEditorPost) return
+    
+    // Check free tier limits again
+    if (!isPro && generationsRemaining <= 0) {
+      showToast("本日のAI生成回数の上限に達しました", "error")
+      return
+    }
+    
+    setIsReplyEditorGenerating(true)
+    try {
+      const result = await generateReplyDraft(user.id, replyEditorPost, context, isPro)
+      if (result) {
+        setReplyEditorDraft(result)
+        // Refresh usage limits after generation
+        await loadUsageLimits()
+      } else {
+        showToast("返信の生成に失敗しました", "error")
+      }
+    } catch (e) {
+      showToast("エラーが発生しました", "error")
+    } finally {
+      setIsReplyEditorGenerating(false)
+      setGeneratingReplyFor(null)
+    }
+  }
+  
+  // Handle post from Reply Editor
+  const handleReplyEditorPost = async (replyText: string) => {
+    if (!user || !selectedAccountId || !replyEditorPost?.tweet_id) {
+      return { success: false, error: "必要な情報が不足しています" }
+    }
+    
+    const account = await getTwitterAccountById(selectedAccountId, user.id)
+    if (!account?.access_token) {
+      return { success: false, error: "Twitterアカウントが見つかりません" }
+    }
+    
+    const result = await postReply(user.id, replyText, replyEditorPost.tweet_id, account.access_token, selectedAccountId)
+    if (result.success) {
+      showToast("リプライを投稿しました！", "success")
+      loadPosts()
+    }
+    return result
+  }
+  
+  // Handle schedule from Reply Editor
+  const handleReplyEditorSchedule = async (replyText: string, scheduledFor: Date) => {
+    if (!user || !replyEditorPost?.tweet_id) {
+      return { success: false, error: "必要な情報が不足しています" }
+    }
+    
+    const result = await scheduleReply(
+      user.id, 
+      replyEditorPost.tweet_id, 
+      replyText, 
+      scheduledFor, 
+      selectedAccountId ?? undefined
+    )
+    
+    if (result.success) {
+      showToast(`リプライを ${scheduledFor.toLocaleString("ja-JP")} に予約しました`, "success")
+    }
+    return result
+  }
+
   const handlePostSimpleRetweet = async (tweetId: string) => {
     if (!user || !selectedAccountId) return { success: false, error: "アカウントを選択してください。" }
     const account = await getTwitterAccountById(selectedAccountId, user.id)
@@ -444,7 +538,9 @@ export default function InspirationPage() {
           setRetweetModalPost(post)
         }}
         onGenerateQuote={handleGenerateQuoteRT}
+        onGenerateReply={handleGenerateReply}
         generatingForId={generatingFor}
+        generatingReplyForId={generatingReplyFor}
       />
 
       <RetweetModal
@@ -497,6 +593,24 @@ export default function InspirationPage() {
         onRegenerate={() => handleQuoteEditorGenerate(userContext)}
         onPost={handleQuoteEditorPost}
         onSchedule={handleQuoteEditorSchedule}
+        mode="quote"
+      />
+
+      {/* Reply Editor Modal */}
+      <QuoteRTEditor
+        isOpen={!!replyEditorPost}
+        onClose={() => {
+          setReplyEditorPost(null)
+          setReplyEditorDraft(null)
+        }}
+        post={replyEditorPost}
+        draft={replyEditorDraft}
+        isGenerating={isReplyEditorGenerating}
+        onGenerate={handleReplyEditorGenerate}
+        onRegenerate={() => handleReplyEditorGenerate(userContext)}
+        onPost={handleReplyEditorPost}
+        onSchedule={handleReplyEditorSchedule}
+        mode="reply"
       />
     </div>
   )
