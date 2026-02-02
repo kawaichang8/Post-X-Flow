@@ -40,28 +40,33 @@ import {
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 import dynamic from "next/dynamic"
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from "chart.js"
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+)
 
 const Line = dynamic(() => import("react-chartjs-2").then((mod) => mod.Line), { ssr: false })
 const Bar = dynamic(() => import("react-chartjs-2").then((mod) => mod.Bar), { ssr: false })
-
-if (typeof window !== "undefined") {
-  try {
-    const ChartJS = require("chart.js")
-    ChartJS.Chart.register(
-      ChartJS.CategoryScale,
-      ChartJS.LinearScale,
-      ChartJS.PointElement,
-      ChartJS.LineElement,
-      ChartJS.BarElement,
-      ChartJS.Title,
-      ChartJS.Tooltip,
-      ChartJS.Legend,
-      ChartJS.Filler
-    )
-  } catch {
-    // chart.js not installed
-  }
-}
 
 type SortKey = "created_at" | "impression_count" | "engagement_score"
 type SortDir = "asc" | "desc"
