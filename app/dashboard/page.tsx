@@ -124,11 +124,38 @@ function NewDashboardContent() {
   // View state
   const [activeView, setActiveView] = useState("create")
 
-  // Generate form toggles (lifted so they persist when switching sections)
-  const [contextMode, setContextMode] = useState(true)
-  const [factCheck, setFactCheck] = useState(true)
-  const [abMode, setAbMode] = useState(false)
-  
+  // Generate form toggles (lifted so they persist when switching sections; also persisted to localStorage for refresh)
+  const [contextMode, setContextModeState] = useState(true)
+  const [factCheck, setFactCheckState] = useState(true)
+  const [abMode, setAbModeState] = useState(false)
+
+  const STORAGE_KEY_CONTEXT = "freexboost_contextMode"
+  const STORAGE_KEY_FACT = "freexboost_factCheck"
+  const STORAGE_KEY_AB = "freexboost_abMode"
+
+  const setContextMode = useCallback((v: boolean) => {
+    setContextModeState(v)
+    if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY_CONTEXT, String(v))
+  }, [])
+  const setFactCheck = useCallback((v: boolean) => {
+    setFactCheckState(v)
+    if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY_FACT, String(v))
+  }, [])
+  const setAbMode = useCallback((v: boolean) => {
+    setAbModeState(v)
+    if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY_AB, String(v))
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const c = localStorage.getItem(STORAGE_KEY_CONTEXT)
+    if (c !== null) setContextModeState(c === "true")
+    const f = localStorage.getItem(STORAGE_KEY_FACT)
+    if (f !== null) setFactCheckState(f === "true")
+    const a = localStorage.getItem(STORAGE_KEY_AB)
+    if (a !== null) setAbModeState(a === "true")
+  }, [])
+
   // History and scheduled
   const [postHistory, setPostHistory] = useState<PostHistoryItem[]>([])
   const [scheduledTweets, setScheduledTweets] = useState<PostHistoryItem[]>([])
